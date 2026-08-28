@@ -1,0 +1,1451 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Controle de Peças — Scanners</title>
+<style>
+  :root{
+    --bg: #0b0f10;
+    --surface: #12181a;
+    --surface-2: #1a2225;
+    --border: #263033;
+    --text: #e7edee;
+    --text-dim: #8fa2a6;
+    --scan: #ef4444;
+    --scan-dim: #7f1d1d;
+    --cyan: #22d3ee;
+    --amber: #f0b429;
+    --green: #34d399;
+    --mono: 'IBM Plex Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  *{ box-sizing:border-box; }
+  html,body{
+    margin:0; padding:0; background:var(--bg); color:var(--text);
+    font-family:var(--sans); -webkit-font-smoothing:antialiased;
+  }
+  body{ min-height:100vh; }
+
+  /* Header with scan-line signature */
+  header{
+    position:relative;
+    padding:22px 18px 18px;
+    background:linear-gradient(180deg, #0d1315, #0b0f10);
+    border-bottom:1px solid var(--border);
+    overflow:hidden;
+  }
+  header .eyebrow{
+    font-family:var(--mono); font-size:11px; letter-spacing:.14em;
+    color:var(--scan); text-transform:uppercase; margin-bottom:6px;
+  }
+  header h1{
+    margin:0; font-size:22px; font-weight:700; letter-spacing:-0.01em;
+  }
+  header p{
+    margin:4px 0 0; color:var(--text-dim); font-size:13px;
+  }
+  .scanline{
+    position:absolute; left:0; right:0; top:0; height:2px;
+    background:linear-gradient(90deg, transparent, var(--scan) 30%, #fff 50%, var(--scan) 70%, transparent);
+    box-shadow:0 0 12px 1px var(--scan);
+    animation:sweep 3.2s linear infinite;
+    opacity:.85;
+  }
+  @keyframes sweep{
+    0%{ transform:translateY(0); }
+    50%{ transform:translateY(64px); }
+    100%{ transform:translateY(0); }
+  }
+  @media (prefers-reduced-motion: reduce){ .scanline{ animation:none; } }
+
+  nav{
+    display:flex; gap:2px; background:var(--surface);
+    border-bottom:1px solid var(--border);
+    overflow-x:auto;
+    position:sticky; top:0; z-index:10;
+  }
+  nav button{
+    flex:1; min-width:84px; padding:12px 8px; background:transparent; border:none;
+    color:var(--text-dim); font-family:var(--sans); font-size:12.5px; font-weight:600;
+    letter-spacing:.02em; cursor:pointer; border-bottom:2px solid transparent;
+    transition:color .15s, border-color .15s;
+    white-space:nowrap;
+  }
+  nav button.active{
+    color:var(--text); border-bottom-color:var(--scan);
+  }
+  nav button:hover{ color:var(--text); }
+
+  main{ padding:16px; max-width:720px; margin:0 auto; padding-bottom:80px; }
+  .view{ display:none; animation:fade .2s ease; }
+  .view.active{ display:block; }
+  @keyframes fade{ from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;} }
+
+  .card{
+    background:var(--surface); border:1px solid var(--border); border-radius:10px;
+    padding:16px; margin-bottom:14px;
+  }
+  .card h2{
+    margin:0 0 12px; font-size:14px; font-weight:700; color:var(--text);
+    display:flex; align-items:center; gap:8px;
+  }
+  .card h2 .tag{
+    font-family:var(--mono); font-size:10px; color:var(--text-dim);
+    border:1px solid var(--border); padding:2px 6px; border-radius:4px;
+  }
+
+  label{ display:block; font-size:11.5px; color:var(--text-dim); margin:10px 0 4px; font-weight:600; letter-spacing:.02em; }
+  input, select, textarea{
+    width:100%; background:var(--surface-2); border:1px solid var(--border); color:var(--text);
+    padding:10px 11px; border-radius:7px; font-size:14px; font-family:var(--sans);
+    outline:none; transition:border-color .15s;
+  }
+  input:focus, select:focus, textarea:focus{ border-color:var(--scan); }
+  textarea{ resize:vertical; min-height:64px; }
+
+  .row{ display:flex; gap:10px; }
+  .row > *{ flex:1; }
+
+  button.primary{
+    margin-top:14px; width:100%; padding:12px; border:none; border-radius:7px;
+    background:var(--scan); color:#fff; font-weight:700; font-size:14px; cursor:pointer;
+    letter-spacing:.01em; transition:filter .15s, transform .1s;
+  }
+  button.primary:hover{ filter:brightness(1.08); }
+  button.primary:active{ transform:scale(.99); }
+  button.primary.ok{ background:var(--green); color:#04231a; }
+  button.primary.info{ background:var(--cyan); color:#04222a; }
+
+  button.ghost{
+    background:transparent; border:1px solid var(--border); color:var(--text-dim);
+    padding:6px 10px; border-radius:6px; font-size:12px; cursor:pointer; font-weight:600;
+  }
+  button.ghost:hover{ color:var(--text); border-color:var(--text-dim); }
+
+  .empty{
+    text-align:center; padding:30px 10px; color:var(--text-dim); font-size:13px;
+  }
+  .empty .glyph{ font-size:26px; display:block; margin-bottom:8px; opacity:.6; }
+
+  table{ width:100%; border-collapse:collapse; }
+  th{
+    text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em;
+    color:var(--text-dim); padding:8px 6px; border-bottom:1px solid var(--border);
+  }
+  td{ padding:9px 6px; border-bottom:1px solid var(--border); font-size:13px; }
+  tr:last-child td{ border-bottom:none; }
+  .num{ font-family:var(--mono); text-align:right; }
+
+  .qty-badge{
+    font-family:var(--mono); font-weight:700; font-size:13px; padding:2px 8px;
+    border-radius:5px; display:inline-block;
+  }
+  .qty-badge.low{ background:rgba(239,68,68,.15); color:#f87171; }
+  .qty-badge.ok{ background:rgba(52,211,153,.14); color:var(--green); }
+
+  .status-pill{
+    font-size:10.5px; font-weight:700; padding:3px 9px; border-radius:20px;
+    text-transform:uppercase; letter-spacing:.04em; font-family:var(--mono);
+  }
+  .status-aberto{ background:rgba(239,68,68,.15); color:#f87171; }
+  .status-andamento{ background:rgba(240,180,41,.15); color:var(--amber); }
+  .status-resolvido{ background:rgba(52,211,153,.14); color:var(--green); }
+
+  .list-item{
+    padding:12px 0; border-bottom:1px solid var(--border);
+  }
+  .list-item:last-child{ border-bottom:none; }
+  .list-item .top-row{ display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .list-item .scanner{ font-weight:700; font-size:13.5px; }
+  .list-item .problem{ font-size:13px; color:var(--text-dim); margin-top:4px; line-height:1.4; }
+  .list-item .meta{ font-size:11px; color:var(--text-dim); margin-top:6px; font-family:var(--mono); }
+  .list-item .actions{ display:flex; gap:6px; margin-top:8px; }
+
+  .toast{
+    position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+    background:var(--surface-2); border:1px solid var(--border); color:var(--text);
+    padding:10px 18px; border-radius:8px; font-size:13px; font-weight:600;
+    box-shadow:0 8px 24px rgba(0,0,0,.4); opacity:0; pointer-events:none;
+    transition:opacity .2s, transform .2s; z-index:100;
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(-4px); }
+  .toast.error{ border-color:var(--scan); }
+
+  .move-type{
+    font-family:var(--mono); font-size:10px; font-weight:700; padding:2px 7px;
+    border-radius:4px; text-transform:uppercase;
+  }
+  .move-type.entrada{ background:rgba(52,211,153,.14); color:var(--green); }
+  .move-type.troca{ background:rgba(239,68,68,.15); color:#f87171; }
+
+  select[multiple]{ min-height:90px; }
+  .hint{ font-size:11.5px; color:var(--text-dim); margin-top:6px; }
+
+  /* ---------- login ---------- */
+  #loginScreen{
+    position:fixed; inset:0; background:var(--bg); z-index:200;
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  #loginScreen .scanline{ position:absolute; }
+  .login-card{
+    width:100%; max-width:340px; background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; padding:26px 22px; position:relative; z-index:2;
+  }
+  .login-card .eyebrow{
+    font-family:var(--mono); font-size:11px; letter-spacing:.14em; color:var(--scan);
+    text-transform:uppercase; margin-bottom:6px;
+  }
+  .login-card h1{ margin:0 0 4px; font-size:20px; }
+  .login-card p{ margin:0 0 18px; color:var(--text-dim); font-size:13px; }
+  #loginErro{ color:#f87171; font-size:12.5px; margin-top:8px; min-height:16px; }
+  .login-hint{
+    margin-top:16px; padding:10px 12px; background:var(--surface-2); border:1px solid var(--border);
+    border-radius:8px; font-size:11.5px; color:var(--text-dim); line-height:1.5;
+  }
+  .login-hint b{ color:var(--text); font-family:var(--mono); }
+
+  /* ---------- header user bar ---------- */
+  .userbar{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-top:12px; padding-top:12px; border-top:1px solid var(--border);
+  }
+  .userbar .who{ font-size:12px; color:var(--text-dim); }
+  .userbar .who b{ color:var(--text); }
+  .role-pill{
+    font-family:var(--mono); font-size:9.5px; font-weight:700; padding:2px 7px;
+    border-radius:20px; text-transform:uppercase; letter-spacing:.04em;
+    background:rgba(34,211,238,.14); color:var(--cyan); margin-left:6px;
+  }
+  .role-pill.administrador{ background:rgba(239,68,68,.15); color:#f87171; }
+  .role-pill.tecnico{ background:rgba(240,180,41,.15); color:var(--amber); }
+
+  #app{ display:none; }
+
+  /* ---------- usuários ---------- */
+  .user-row{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    padding:10px 0; border-bottom:1px solid var(--border);
+  }
+  .user-row:last-child{ border-bottom:none; }
+  .user-row .info{ font-size:13px; }
+  .user-row .info .login-name{ color:var(--text-dim); font-family:var(--mono); font-size:11.5px; }
+  .user-row .actions{ display:flex; gap:6px; flex-shrink:0; }
+
+  /* ---------- modais (trocar senha / qr code) ---------- */
+  #senhaModalOverlay, #qrModalOverlay{
+    display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:150;
+    align-items:center; justify-content:center; padding:20px;
+  }
+  #senhaModalOverlay.show, #qrModalOverlay.show{ display:flex; }
+  .modal-card{
+    width:100%; max-width:340px; background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; padding:20px;
+  }
+  .modal-card h2{ margin:0 0 4px; font-size:15px; }
+  .modal-card .sub{ font-size:12px; color:var(--text-dim); margin-bottom:6px; }
+  #senhaErro, #qrErro{ color:#f87171; font-size:12.5px; margin-top:8px; min-height:16px; }
+  .modal-actions{ display:flex; gap:8px; margin-top:6px; }
+  .modal-actions button.primary{ margin-top:0; }
+
+  /* ---------- scanners / qr code ---------- */
+  .scanner-field-row{ display:flex; gap:8px; align-items:flex-end; }
+  .scanner-field-row input{ flex:1; }
+  .scanner-field-row button{ flex-shrink:0; white-space:nowrap; }
+  #qrReaderRegion{
+    width:100%; border-radius:8px; overflow:hidden; background:#000;
+    min-height:220px; margin-top:6px;
+  }
+  #qrReaderRegion video{ width:100%; border-radius:8px; }
+  .scanner-row{
+    padding:12px 0; border-bottom:1px solid var(--border);
+  }
+  .scanner-row:last-child{ border-bottom:none; }
+  .scanner-row .nome{ font-weight:700; font-size:13.5px; }
+  .scanner-row .details{ font-size:12px; color:var(--text-dim); margin-top:3px; font-family:var(--mono); }
+  .scanner-row .actions{ display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; }
+
+  .print-only{ display:none; }
+
+  @media print{
+    body{ background:#fff; color:#111; }
+    header, nav, .no-print, #toast, .card > label, .card > input, .card > select, .card > button.primary{ display:none !important; }
+    #view-relatorio .card:first-child{ display:none !important; }
+    main{ padding:0; max-width:100%; }
+    .view{ display:none !important; }
+    .view.active{ display:block !important; }
+    #view-relatorio .card{ border:none; padding:0; background:#fff; }
+    .print-only{ display:block; }
+    .print-header{ border-bottom:2px solid #111; padding-bottom:10px; margin-bottom:16px; }
+    .print-header h1{ font-size:18px; margin:0 0 4px; color:#111; }
+    .print-meta{ font-size:12px; color:#444; font-family:var(--mono); }
+    h2{ color:#111 !important; }
+    h2 .tag{ border-color:#999; color:#444; }
+    table{ page-break-inside:auto; }
+    tr{ page-break-inside:avoid; }
+    th{ color:#444; border-bottom-color:#999; }
+    td{ color:#111; border-bottom-color:#ddd; }
+    .qty-badge{ background:none !important; color:#111 !important; border:1px solid #999; }
+    .move-type{ border:1px solid #999; background:none !important; color:#111 !important; }
+    .list-item{ border-bottom-color:#ddd; }
+    .list-item .problem, .list-item .meta{ color:#444; }
+    .hint{ color:#444; }
+  }
+</style>
+
+<!-- Firebase (Firestore) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+<!-- QR Code: geração (qrcodejs) e leitura via câmera (html5-qrcode) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginScreen">
+  <div class="scanline"></div>
+  <div class="login-card">
+    <div class="eyebrow">Controle de peças</div>
+    <h1>Estoque de Scanners</h1>
+    <p>Entre com seu login e senha para continuar.</p>
+    <label>Login</label>
+    <input id="loginUser" placeholder="seu.login" autocomplete="username">
+    <label>Senha</label>
+    <input id="loginSenha" type="password" placeholder="••••••••" autocomplete="current-password">
+    <button class="primary" onclick="doLogin()">Entrar</button>
+    <div id="loginErro"></div>
+    <div class="login-hint" id="loginPrimeiroAcesso" style="display:none">
+      Primeiro acesso: use <b>admin</b> / <b>admin123</b> e depois cadastre os demais usuários na aba Usuários. Recomendamos trocar essa senha em seguida.
+    </div>
+  </div>
+</div>
+
+<div id="app">
+
+<header>
+  <div class="scanline"></div>
+  <div class="eyebrow">Controle de peças</div>
+  <h1>Estoque de Scanners</h1>
+  <p>Entrada, troca e chamados de manutenção</p>
+  <div class="userbar">
+    <div class="who">Logado como <b id="userNomeTag"></b><span class="role-pill" id="userRoleTag"></span></div>
+    <div style="display:flex; gap:6px">
+      <button class="ghost" onclick="abrirTrocarSenha()">Trocar senha</button>
+      <button class="ghost" onclick="doLogout()">Sair</button>
+    </div>
+  </div>
+</header>
+
+<nav id="tabs">
+  <button data-view="estoque" data-roles="administrador" class="active">Estoque</button>
+  <button data-view="cadastro" data-roles="administrador">Cadastrar</button>
+  <button data-view="scanners" data-roles="administrador">Scanners</button>
+  <button data-view="entrada" data-roles="administrador">Entrada</button>
+  <button data-view="troca" data-roles="administrador,operador">Troca</button>
+  <button data-view="chamados" data-roles="administrador,operador,tecnico">Chamados</button>
+  <button data-view="relatorio" data-roles="administrador">Relatório</button>
+  <button data-view="usuarios" data-roles="administrador">Usuários</button>
+</nav>
+
+<main>
+
+  <!-- ESTOQUE -->
+  <section class="view active" id="view-estoque">
+    <div class="card">
+      <h2>Peças em estoque <span class="tag" id="totalPecasTag">0 itens</span></h2>
+      <div id="estoqueList"></div>
+    </div>
+    <div class="card">
+      <h2>Últimas movimentações</h2>
+      <div id="movList"></div>
+    </div>
+  </section>
+
+  <!-- CADASTRO -->
+  <section class="view" id="view-cadastro">
+    <div class="card">
+      <h2>Cadastrar nova peça</h2>
+      <label>Nome da peça</label>
+      <input id="cadNome" placeholder="Ex: Rolete de tração, Sensor CIS...">
+      <div class="row">
+        <div>
+          <label>Modelo do scanner</label>
+          <input id="cadCodigo" placeholder="Ex: Kodak i2900, Fujitsu fi-7160...">
+        </div>
+        <div>
+          <label>Quantidade inicial</label>
+          <input id="cadQtd" type="number" min="0" value="0">
+        </div>
+      </div>
+      <button class="primary" onclick="cadastrarPeca()">Cadastrar peça</button>
+    </div>
+  </section>
+
+  <!-- SCANNERS -->
+  <section class="view" id="view-scanners">
+    <div class="card">
+      <h2 id="scannerFormTitle">Cadastrar scanner</h2>
+      <input type="hidden" id="scannerEditId" value="">
+      <label>Nome / identificação</label>
+      <input id="scannerNome" placeholder="Ex: Scanner 04 - Recepção">
+      <div class="row">
+        <div>
+          <label>Marca</label>
+          <input id="scannerMarca" placeholder="Ex: Kodak, Fujitsu...">
+        </div>
+        <div>
+          <label>Modelo</label>
+          <input id="scannerModelo" placeholder="Ex: i2900, fi-7160...">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Número de série</label>
+          <input id="scannerNumSerie" placeholder="Nº de série do equipamento">
+        </div>
+        <div>
+          <label>Tombo</label>
+          <input id="scannerPatrimonio" placeholder="Nº de tombamento">
+        </div>
+      </div>
+      <label>Localização</label>
+      <input id="scannerLocal" placeholder="Ex: Recepção - Térreo">
+      <label>Observações</label>
+      <textarea id="scannerObs" placeholder="Opcional"></textarea>
+      <button class="primary" onclick="salvarScanner()" id="scannerSaveBtn">Cadastrar scanner</button>
+      <button class="ghost" style="margin-top:8px;display:none" id="scannerCancelBtn" onclick="cancelarEdicaoScanner()">Cancelar edição</button>
+    </div>
+    <div class="card">
+      <h2>Scanners cadastrados <span class="tag" id="totalScannersTag">0</span></h2>
+      <div class="hint" style="margin-bottom:8px">Cada scanner tem um QR Code próprio, com marca, modelo, número de série e tombo gravados dentro do código. Imprima e cole no equipamento — na hora da troca, o funcionário só bipa o código.</div>
+      <div id="scannersList"></div>
+    </div>
+  </section>
+
+  <!-- ENTRADA -->
+  <section class="view" id="view-entrada">
+    <div class="card">
+      <h2>Entrada de peças</h2>
+      <label>Peça</label>
+      <select id="entPeca"></select>
+      <label>Quantidade recebida</label>
+      <input id="entQtd" type="number" min="1" value="1">
+      <label>Data da entrada</label>
+      <input id="entData" type="date">
+      <label>Observação</label>
+      <textarea id="entObs" placeholder="Ex: nota fiscal, fornecedor..."></textarea>
+      <button class="primary ok" id="entSaveBtn" onclick="lancarEntrada()">Adicionar ao estoque</button>
+    </div>
+  </section>
+
+  <!-- TROCA -->
+  <section class="view" id="view-troca">
+    <div class="card">
+      <h2>Troca de peça</h2>
+      <label>Peça utilizada</label>
+      <select id="trocaPeca"></select>
+      <label>Quantidade</label>
+      <input id="trocaQtd" type="number" min="1" value="1">
+      <label>Scanner / patrimônio</label>
+      <div class="scanner-field-row">
+        <input id="trocaScanner" placeholder="Ex: Scanner 04 - Recepção">
+        <button class="ghost" type="button" onclick="abrirQrScanner('troca')">📷 Bipar QR</button>
+      </div>
+      <label>Observação</label>
+      <textarea id="trocaObs" placeholder="Motivo da troca, defeito apresentado..."></textarea>
+      <button class="primary" id="trocaSaveBtn" onclick="lancarTroca()">Registrar troca (baixa no estoque)</button>
+      <div class="hint" id="trocaHint"></div>
+    </div>
+  </section>
+
+  <!-- CHAMADOS -->
+  <section class="view" id="view-chamados">
+    <div class="card">
+      <h2>Notificação via WhatsApp <span class="tag">opcional</span></h2>
+      <label>Número para receber o alerta (com DDD)</label>
+      <input id="whatsNumero" placeholder="Ex: 81999998888">
+      <button class="ghost" style="margin-top:10px" onclick="salvarWhatsNumero()">Salvar número</button>
+    </div>
+    <div class="card">
+      <h2>Abrir chamado</h2>
+      <label>Scanner / patrimônio</label>
+      <div class="scanner-field-row">
+        <input id="chScanner" placeholder="Ex: Scanner 04 - Recepção">
+        <button class="ghost" type="button" onclick="abrirQrScanner('chamado')">📷 Bipar QR</button>
+      </div>
+      <label>Descrição do problema</label>
+      <textarea id="chProblema" placeholder="Descreva o que está acontecendo..."></textarea>
+
+      <button class="primary info" onclick="abrirChamado()">Abrir chamado</button>
+    </div>
+    <div class="card">
+      <h2>Chamados <span class="tag" id="totalChamadosTag">0</span></h2>
+      <div id="chamadosList"></div>
+    </div>
+  </section>
+
+  <!-- RELATÓRIO -->
+  <section class="view" id="view-relatorio">
+    <div class="card">
+      <h2>Relatório de trocas</h2>
+      <label>Scanner</label>
+      <select id="relScanner"></select>
+      <label>Período</label>
+      <select id="relPeriodo">
+        <option value="semana">Semana</option>
+        <option value="mes">Mês</option>
+        <option value="ano">Ano</option>
+        <option value="todos">Todo o período</option>
+      </select>
+      <label id="relDataLabel">Data de referência</label>
+      <input id="relData" type="date">
+      <button class="primary info" onclick="gerarRelatorio()">Gerar relatório</button>
+    </div>
+    <div class="card" id="relResultCard" style="display:none">
+      <div class="print-only print-header">
+        <h1>Relatório de Trocas de Peças — Scanners</h1>
+        <div class="print-meta" id="relPrintMeta"></div>
+      </div>
+      <h2>Resultado <span class="tag" id="relPeriodoTag"></span></h2>
+      <button class="ghost no-print" style="margin-bottom:12px" onclick="window.print()">🖨 Imprimir / Salvar em PDF</button>
+      <div id="relResumo"></div>
+      <div id="relDetalhe" style="margin-top:10px"></div>
+    </div>
+  </section>
+
+  <!-- USUÁRIOS -->
+  <section class="view" id="view-usuarios">
+    <div class="card">
+      <h2 id="userFormTitle">Adicionar usuário</h2>
+      <input type="hidden" id="userEditId" value="">
+      <label>Nome</label>
+      <input id="userNome" placeholder="Nome completo">
+      <label>Login</label>
+      <input id="userLogin" placeholder="login de acesso" autocomplete="off">
+      <label>Senha</label>
+      <input id="userSenha" type="password" placeholder="senha de acesso" autocomplete="new-password">
+      <label>Perfil</label>
+      <select id="userPerfil">
+        <option value="administrador">Administrador</option>
+        <option value="operador">Operador ID</option>
+        <option value="tecnico">Técnico</option>
+      </select>
+      <button class="primary" onclick="salvarUsuario()" id="userSaveBtn">Salvar usuário</button>
+      <button class="ghost" style="margin-top:8px;display:none" id="userCancelBtn" onclick="cancelarEdicaoUsuario()">Cancelar edição</button>
+    </div>
+    <div class="card">
+      <h2>Usuários cadastrados <span class="tag" id="totalUsersTag">0</span></h2>
+      <div id="usersList"></div>
+    </div>
+  </section>
+
+</main>
+
+</div>
+
+<!-- MODAL TROCAR SENHA -->
+<div id="senhaModalOverlay">
+  <div class="modal-card">
+    <h2>Trocar senha</h2>
+    <div class="sub">Defina uma senha pessoal para o seu login.</div>
+    <label>Senha atual</label>
+    <input id="senhaAtual" type="password" autocomplete="current-password">
+    <label>Nova senha</label>
+    <input id="senhaNova" type="password" autocomplete="new-password">
+    <label>Confirmar nova senha</label>
+    <input id="senhaNovaConfirma" type="password" autocomplete="new-password">
+    <div id="senhaErro"></div>
+    <div class="modal-actions">
+      <button class="ghost" style="flex:1" onclick="fecharTrocarSenha()">Cancelar</button>
+      <button class="primary ok" style="flex:1" onclick="salvarTrocarSenha()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL BIPAR QR CODE -->
+<div id="qrModalOverlay">
+  <div class="modal-card">
+    <h2>Bipar QR Code</h2>
+    <div class="sub">Aponte a câmera para o QR Code colado no scanner.</div>
+    <div id="qrReaderRegion"></div>
+    <div id="qrErro"></div>
+    <button class="ghost" style="margin-top:10px;width:100%" onclick="fecharQrScanner()">Cancelar</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ================================================================
+// CONFIGURAÇÃO DO FIREBASE — obrigatório preencher antes de usar
+// 1. Crie um projeto gratuito em https://console.firebase.google.com
+// 2. Ative o "Firestore Database" (modo produção)
+// 3. Em Configurações do projeto > Geral > Seus apps > Web, copie o
+//    objeto de configuração e cole substituindo os valores abaixo.
+// 4. No Firestore, configure as regras (veja instruções enviadas
+//    junto com este arquivo) para liberar leitura/escrita.
+// ================================================================
+const firebaseConfig = {
+  apiKey: "AIzaSyDgyWkSLhyRhilqJf54En9elTWOS-57UM4",
+  authDomain: "pecas-scanneres.firebaseapp.com",
+  projectId: "pecas-scanneres",
+  messagingSenderId: "172246667154",
+  appId: "1:172246667154:web:9f9471f19d85a89333bb4b"
+};
+
+let db = null;
+let firebaseOk = false;
+try{
+  if(firebaseConfig.apiKey !== 'COLOQUE_SUA_API_KEY_AQUI'){
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    firebaseOk = true;
+  }
+}catch(e){
+  console.error('Erro ao iniciar Firebase:', e);
+}
+
+let parts = [];
+let movements = [];
+let tickets = [];
+let settings = { whatsapp: '' };
+let users = [];
+let scanners = [];
+let currentUser = null;
+let qrScannerInstance = null;
+let qrScannerAlvo = null; // 'troca' ou 'chamado' — campo que vai receber o resultado
+
+// ---------- storage helpers (Firestore — dados compartilhados entre todos os usuários) ----------
+async function loadUsersAndBoot(){
+  if(!firebaseOk){
+    document.getElementById('loginErro').textContent = 'Firebase não configurado. Edite firebaseConfig no arquivo HTML antes de usar o app.';
+    return;
+  }
+  try{
+    const snap = await db.collection('users').get();
+    users = snap.docs.map(d => d.data());
+  }catch(e){
+    users = [];
+    document.getElementById('loginErro').textContent = 'Não foi possível conectar ao Firebase. Confira a configuração e as regras de acesso.';
+  }
+  if(!users.length){
+    const admin = { id: uid(), nome:'Administrador', login:'admin', senha:'admin123', perfil:'administrador' };
+    users = [admin];
+    try{ await db.collection('users').doc(admin.id).set(admin); }catch(e){}
+    document.getElementById('loginPrimeiroAcesso').style.display = 'block';
+  }
+}
+
+async function loadAppData(){
+  try{
+    const snap = await db.collection('parts').get();
+    parts = snap.docs.map(d => d.data());
+  }catch(e){ parts = []; }
+  try{
+    const snap = await db.collection('movements').get();
+    movements = snap.docs.map(d => d.data());
+  }catch(e){ movements = []; }
+  try{
+    const snap = await db.collection('tickets').get();
+    tickets = snap.docs.map(d => d.data());
+  }catch(e){ tickets = []; }
+  try{
+    const snap = await db.collection('scanners').get();
+    scanners = snap.docs.map(d => d.data());
+  }catch(e){ scanners = []; }
+  try{
+    const doc = await db.collection('settings').doc('app').get();
+    settings = doc.exists ? doc.data() : { whatsapp: '' };
+  }catch(e){ settings = { whatsapp: '' }; }
+  document.getElementById('whatsNumero').value = settings.whatsapp || '';
+  document.getElementById('entData').value = todayStr();
+  renderAll();
+}
+
+async function saveSettings(){
+  try{ await db.collection('settings').doc('app').set(settings); }
+  catch(e){ showToast('Erro ao salvar número', true); }
+}
+async function savePart(part){
+  try{ await db.collection('parts').doc(part.id).set(part); }
+  catch(e){ showToast('Erro ao salvar peça', true); }
+}
+async function saveMovement(mov){
+  try{ await db.collection('movements').doc(mov.id).set(mov); }
+  catch(e){ showToast('Erro ao salvar movimentação', true); }
+}
+
+// Aplica uma entrada/troca de estoque de forma atômica no Firestore.
+// Usa uma transação para ler o valor mais recente de qtd (evita que duas
+// pessoas lançando movimentações ao mesmo tempo "pisem" uma na outra) e
+// só altera o estado local (parts/movements) depois que a transação
+// confirma no servidor — se falhar, nada muda na tela.
+async function aplicarMovimentoEstoque(part, delta, movBase){
+  const ref = db.collection('parts').doc(part.id);
+  const movRef = db.collection('movements').doc(movBase.id);
+  let qtdFinal;
+  await db.runTransaction(async (tx) => {
+    const doc = await tx.get(ref);
+    const atual = doc.exists ? (doc.data().qtd || 0) : part.qtd;
+    qtdFinal = atual + delta;
+    if(qtdFinal < 0){
+      throw new Error('ESTOQUE_INSUFICIENTE');
+    }
+    tx.set(ref, { ...part, qtd: qtdFinal });
+    tx.set(movRef, movBase);
+  });
+  part.qtd = qtdFinal;
+  movements.push(movBase);
+}
+async function saveTicket(t){
+  try{ await db.collection('tickets').doc(t.id).set(t); }
+  catch(e){ showToast('Erro ao salvar chamado', true); }
+}
+async function deleteTicketDoc(id){
+  try{ await db.collection('tickets').doc(id).delete(); }
+  catch(e){ showToast('Erro ao excluir chamado', true); }
+}
+async function saveUser(u){
+  try{ await db.collection('users').doc(u.id).set(u); }
+  catch(e){ showToast('Erro ao salvar usuário', true); }
+}
+async function deleteUserDoc(id){
+  try{ await db.collection('users').doc(id).delete(); }
+  catch(e){ showToast('Erro ao excluir usuário', true); }
+}
+async function saveScannerDoc(s){
+  try{ await db.collection('scanners').doc(s.id).set(s); }
+  catch(e){ showToast('Erro ao salvar scanner', true); }
+}
+async function deleteScannerDoc(id){
+  try{ await db.collection('scanners').doc(id).delete(); }
+  catch(e){ showToast('Erro ao excluir scanner', true); }
+}
+
+
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+function fmtDate(iso){
+  const d = new Date(iso);
+  return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+}
+
+function showToast(msg, isError){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isError ? ' error' : '');
+  setTimeout(()=>{ t.className = 'toast'; }, 2400);
+}
+
+// ---------- login / autenticação ----------
+async function doLogin(){
+  const login = document.getElementById('loginUser').value.trim();
+  const senha = document.getElementById('loginSenha').value;
+  const erro = document.getElementById('loginErro');
+  erro.textContent = '';
+  if(!login || !senha){ erro.textContent = 'Informe login e senha.'; return; }
+  const user = users.find(u => u.login.toLowerCase() === login.toLowerCase() && u.senha === senha);
+  if(!user){ erro.textContent = 'Login ou senha inválidos.'; return; }
+  currentUser = user;
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('userNomeTag').textContent = user.nome;
+  const roleLabels = { administrador:'Administrador', operador:'Operador ID', tecnico:'Técnico' };
+  const roleTag = document.getElementById('userRoleTag');
+  roleTag.textContent = roleLabels[user.perfil] || user.perfil;
+  roleTag.className = 'role-pill ' + user.perfil;
+  applyRoleVisibility();
+  await loadAppData();
+}
+
+function doLogout(){
+  currentUser = null;
+  document.getElementById('loginUser').value = '';
+  document.getElementById('loginSenha').value = '';
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('loginScreen').style.display = 'flex';
+}
+
+function abrirTrocarSenha(){
+  document.getElementById('senhaAtual').value = '';
+  document.getElementById('senhaNova').value = '';
+  document.getElementById('senhaNovaConfirma').value = '';
+  document.getElementById('senhaErro').textContent = '';
+  document.getElementById('senhaModalOverlay').classList.add('show');
+}
+
+function fecharTrocarSenha(){
+  document.getElementById('senhaModalOverlay').classList.remove('show');
+}
+
+async function salvarTrocarSenha(){
+  const atual = document.getElementById('senhaAtual').value;
+  const nova = document.getElementById('senhaNova').value;
+  const confirma = document.getElementById('senhaNovaConfirma').value;
+  const erro = document.getElementById('senhaErro');
+  erro.textContent = '';
+
+  if(!currentUser){ erro.textContent = 'Sessão inválida, faça login novamente.'; return; }
+  if(atual !== currentUser.senha){ erro.textContent = 'Senha atual incorreta.'; return; }
+  if(!nova || nova.length < 4){ erro.textContent = 'A nova senha deve ter ao menos 4 caracteres.'; return; }
+  if(nova !== confirma){ erro.textContent = 'A confirmação não confere com a nova senha.'; return; }
+  if(nova === atual){ erro.textContent = 'A nova senha deve ser diferente da atual.'; return; }
+
+  const u = users.find(x => x.id === currentUser.id);
+  if(u){ u.senha = nova; }
+  currentUser.senha = nova;
+  await saveUser(u);
+  fecharTrocarSenha();
+  showToast('Senha atualizada com sucesso');
+}
+
+function applyRoleVisibility(){
+  if(!currentUser) return;
+  const buttons = document.querySelectorAll('#tabs button');
+  let firstVisible = null;
+  buttons.forEach(b => {
+    const roles = b.dataset.roles.split(',');
+    const allowed = roles.includes(currentUser.perfil);
+    b.style.display = allowed ? '' : 'none';
+    if(allowed && !firstVisible) firstVisible = b;
+  });
+  buttons.forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  if(firstVisible){
+    firstVisible.classList.add('active');
+    document.getElementById('view-' + firstVisible.dataset.view).classList.add('active');
+  }
+}
+
+// ---------- tabs ----------
+document.getElementById('tabs').addEventListener('click', (e)=>{
+  const btn = e.target.closest('button');
+  if(!btn) return;
+  document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('view-' + btn.dataset.view).classList.add('active');
+  if(btn.dataset.view === 'entrada' || btn.dataset.view === 'troca') fillPecaSelects();
+  if(btn.dataset.view === 'entrada' && !document.getElementById('entData').value){
+    document.getElementById('entData').value = todayStr();
+  }
+  if(btn.dataset.view === 'relatorio'){
+    fillRelScannerSelect();
+    if(!document.getElementById('relData').value) document.getElementById('relData').value = todayStr();
+  }
+  if(btn.dataset.view === 'usuarios') renderUsers();
+});
+
+// ---------- cadastro ----------
+async function cadastrarPeca(){
+  const nome = document.getElementById('cadNome').value.trim();
+  const codigo = document.getElementById('cadCodigo').value.trim();
+  const qtd = parseInt(document.getElementById('cadQtd').value) || 0;
+  if(!nome){ showToast('Informe o nome da peça', true); return; }
+  const novaPeca = { id: uid(), nome, codigo, qtd };
+  parts.push(novaPeca);
+  await savePart(novaPeca);
+  document.getElementById('cadNome').value = '';
+  document.getElementById('cadCodigo').value = '';
+  document.getElementById('cadQtd').value = 0;
+  showToast('Peça cadastrada');
+  renderAll();
+}
+
+// ---------- scanners (equipamentos) + QR Code ----------
+function renderScanners(){
+  const list = document.getElementById('scannersList');
+  document.getElementById('totalScannersTag').textContent = scanners.length;
+  if(!scanners.length){
+    list.innerHTML = `<div class="empty"><span class="glyph">▢</span>Nenhum scanner cadastrado ainda.</div>`;
+    return;
+  }
+  list.innerHTML = scanners.slice().sort((a,b) => a.nome.localeCompare(b.nome)).map(s => `
+    <div class="scanner-row">
+      <div class="nome">${escapeHtml(s.nome)}</div>
+      <div class="details">
+        ${s.marca ? escapeHtml(s.marca) + ' ' : ''}${s.modelo ? escapeHtml(s.modelo) : (s.marca ? '' : '—')}
+        ${s.numeroSerie ? ' · Série ' + escapeHtml(s.numeroSerie) : ''}
+        ${s.patrimonio ? ' · Tombo ' + escapeHtml(s.patrimonio) : ''}
+        ${s.localizacao ? ' · ' + escapeHtml(s.localizacao) : ''}
+      </div>
+      <div class="actions">
+        <button class="ghost" onclick="imprimirQrScanner('${s.id}')">🖨 Imprimir QR Code</button>
+        <button class="ghost" onclick="editarScanner('${s.id}')">Editar</button>
+        <button class="ghost" onclick="excluirScanner('${s.id}')">Excluir</button>
+      </div>
+    </div>`).join('');
+}
+
+async function salvarScanner(){
+  const editId = document.getElementById('scannerEditId').value;
+  const nome = document.getElementById('scannerNome').value.trim();
+  const marca = document.getElementById('scannerMarca').value.trim();
+  const modelo = document.getElementById('scannerModelo').value.trim();
+  const numeroSerie = document.getElementById('scannerNumSerie').value.trim();
+  const patrimonio = document.getElementById('scannerPatrimonio').value.trim();
+  const localizacao = document.getElementById('scannerLocal').value.trim();
+  const obs = document.getElementById('scannerObs').value.trim();
+  if(!nome){ showToast('Informe o nome/identificação do scanner', true); return; }
+  const nomeDuplicado = scanners.find(s => s.nome.toLowerCase() === nome.toLowerCase() && s.id !== editId);
+  if(nomeDuplicado){ showToast('Já existe um scanner cadastrado com esse nome', true); return; }
+
+  let scannerSalvo;
+  if(editId){
+    scannerSalvo = scanners.find(s => s.id === editId);
+    if(scannerSalvo){
+      scannerSalvo.nome = nome; scannerSalvo.marca = marca; scannerSalvo.modelo = modelo;
+      scannerSalvo.numeroSerie = numeroSerie;
+      scannerSalvo.patrimonio = patrimonio; scannerSalvo.localizacao = localizacao; scannerSalvo.obs = obs;
+    }
+    showToast('Scanner atualizado');
+  } else {
+    scannerSalvo = { id: uid(), nome, marca, modelo, numeroSerie, patrimonio, localizacao, obs };
+    scanners.push(scannerSalvo);
+    showToast('Scanner cadastrado');
+  }
+  await saveScannerDoc(scannerSalvo);
+  cancelarEdicaoScanner();
+  renderScanners();
+}
+
+function editarScanner(id){
+  const s = scanners.find(x => x.id === id);
+  if(!s) return;
+  document.getElementById('scannerEditId').value = s.id;
+  document.getElementById('scannerNome').value = s.nome;
+  document.getElementById('scannerMarca').value = s.marca || '';
+  document.getElementById('scannerModelo').value = s.modelo || '';
+  document.getElementById('scannerNumSerie').value = s.numeroSerie || '';
+  document.getElementById('scannerPatrimonio').value = s.patrimonio || '';
+  document.getElementById('scannerLocal').value = s.localizacao || '';
+  document.getElementById('scannerObs').value = s.obs || '';
+  document.getElementById('scannerFormTitle').textContent = 'Editar scanner';
+  document.getElementById('scannerSaveBtn').textContent = 'Salvar alterações';
+  document.getElementById('scannerCancelBtn').style.display = 'block';
+}
+
+function cancelarEdicaoScanner(){
+  document.getElementById('scannerEditId').value = '';
+  document.getElementById('scannerNome').value = '';
+  document.getElementById('scannerMarca').value = '';
+  document.getElementById('scannerModelo').value = '';
+  document.getElementById('scannerNumSerie').value = '';
+  document.getElementById('scannerPatrimonio').value = '';
+  document.getElementById('scannerLocal').value = '';
+  document.getElementById('scannerObs').value = '';
+  document.getElementById('scannerFormTitle').textContent = 'Cadastrar scanner';
+  document.getElementById('scannerSaveBtn').textContent = 'Cadastrar scanner';
+  document.getElementById('scannerCancelBtn').style.display = 'none';
+}
+
+async function excluirScanner(id){
+  scanners = scanners.filter(x => x.id !== id);
+  await deleteScannerDoc(id);
+  renderScanners();
+  showToast('Scanner excluído');
+}
+
+function conteudoQrScanner(s){
+  // A 1ª linha (SCANNER:id) é usada pelo app para reconhecer o equipamento ao bipar.
+  // As linhas seguintes ficam gravadas dentro do próprio QR Code e podem ser lidas
+  // por qualquer leitor de QR (inclusive fora do app).
+  const linhas = [
+    'SCANNER:' + s.id,
+    'NOME: ' + (s.nome || '—'),
+    'MARCA: ' + (s.marca || '—'),
+    'MODELO: ' + (s.modelo || '—'),
+    'NUMERO DE SERIE: ' + (s.numeroSerie || '—'),
+    'TOMBO: ' + (s.patrimonio || '—')
+  ];
+  if(s.localizacao) linhas.push('LOCAL: ' + s.localizacao);
+  return linhas.join('\n');
+}
+
+function imprimirQrScanner(id){
+  const s = scanners.find(x => x.id === id);
+  if(!s) return;
+  const tempDiv = document.createElement('div');
+  tempDiv.style.display = 'none';
+  document.body.appendChild(tempDiv);
+  new QRCode(tempDiv, { text: conteudoQrScanner(s), width: 260, height: 260, correctLevel: QRCode.CorrectLevel.M });
+
+  setTimeout(() => {
+    const canvas = tempDiv.querySelector('canvas');
+    const img = tempDiv.querySelector('img');
+    const imgSrc = canvas ? canvas.toDataURL('image/png') : (img ? img.src : '');
+    document.body.removeChild(tempDiv);
+
+    const win = window.open('', '_blank');
+    if(!win){ showToast('Permita pop-ups para imprimir o QR Code', true); return; }
+    win.document.write(`
+      <!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+      <title>QR Code - ${escapeHtml(s.nome)}</title>
+      <style>
+        body{ font-family:-apple-system,Segoe UI,Roboto,sans-serif; text-align:center; padding:36px; color:#111; }
+        h1{ font-size:17px; margin:0 0 14px; }
+        img{ width:220px; height:220px; }
+        .info{ font-size:12.5px; color:#333; margin-top:16px; text-align:left; display:inline-block; line-height:1.6; }
+        .info b{ display:inline-block; min-width:90px; }
+      </style>
+      </head><body>
+        <h1>${escapeHtml(s.nome)}</h1>
+        <img src="${imgSrc}" alt="QR Code">
+        <div class="info">
+          <div><b>Marca:</b> ${escapeHtml(s.marca || '—')}</div>
+          <div><b>Modelo:</b> ${escapeHtml(s.modelo || '—')}</div>
+          <div><b>Nº de série:</b> ${escapeHtml(s.numeroSerie || '—')}</div>
+          <div><b>Tombo:</b> ${escapeHtml(s.patrimonio || '—')}</div>
+          <div><b>Localização:</b> ${escapeHtml(s.localizacao || '—')}</div>
+        </div>
+        <script>window.onload = function(){ window.print(); };<\/script>
+      </body></html>
+    `);
+    win.document.close();
+  }, 200);
+}
+
+// ---------- leitura de QR Code via câmera ----------
+function abrirQrScanner(alvo){
+  qrScannerAlvo = alvo;
+  document.getElementById('qrErro').textContent = '';
+  document.getElementById('qrModalOverlay').classList.add('show');
+  qrScannerInstance = new Html5Qrcode('qrReaderRegion');
+  qrScannerInstance.start(
+    { facingMode: 'environment' },
+    { fps: 10, qrbox: 220 },
+    onQrScanSuccess,
+    () => { /* ignora falhas de leitura por frame */ }
+  ).catch(() => {
+    document.getElementById('qrErro').textContent = 'Não foi possível acessar a câmera. Verifique as permissões do navegador.';
+  });
+}
+
+function onQrScanSuccess(decodedText){
+  const match = decodedText.match(/^SCANNER:(.+)$/m);
+  const id = match ? match[1].trim() : decodedText.trim();
+  const s = scanners.find(x => x.id === id);
+  if(!s){
+    document.getElementById('qrErro').textContent = 'QR Code não reconhecido. Tente novamente.';
+    return;
+  }
+  const campoId = qrScannerAlvo === 'chamado' ? 'chScanner' : 'trocaScanner';
+  document.getElementById(campoId).value = s.nome;
+  showToast(`Scanner identificado: ${s.nome}`);
+  fecharQrScanner();
+}
+
+function fecharQrScanner(){
+  document.getElementById('qrModalOverlay').classList.remove('show');
+  if(qrScannerInstance){
+    qrScannerInstance.stop().then(() => qrScannerInstance.clear()).catch(() => {});
+    qrScannerInstance = null;
+  }
+}
+
+// ---------- selects ----------
+function todayStr(){
+  const d = new Date();
+  const tz = d.getTimezoneOffset() * 60000;
+  return new Date(d - tz).toISOString().slice(0,10);
+}
+
+function fillPecaSelects(){
+  const opts = parts.map(p => `<option value="${p.id}">${escapeHtml(p.nome)}${p.codigo ? ' — ' + escapeHtml(p.codigo) : ''} (estoque: ${p.qtd})</option>`).join('');
+  const empty = '<option value="">Nenhuma peça cadastrada</option>';
+  document.getElementById('entPeca').innerHTML = parts.length ? opts : empty;
+  document.getElementById('trocaPeca').innerHTML = parts.length ? opts : empty;
+}
+
+// ---------- entrada ----------
+async function lancarEntrada(){
+  const btn = document.getElementById('entSaveBtn');
+  const partId = document.getElementById('entPeca').value;
+  const qtd = parseInt(document.getElementById('entQtd').value) || 0;
+  const dataInput = document.getElementById('entData').value;
+  const obs = document.getElementById('entObs').value.trim();
+  if(!partId){ showToast('Cadastre uma peça primeiro', true); return; }
+  if(qtd <= 0){ showToast('Informe uma quantidade válida', true); return; }
+  if(!dataInput){ showToast('Informe a data da entrada', true); return; }
+  const part = parts.find(p => p.id === partId);
+  const now = new Date();
+  const [y,mo,da] = dataInput.split('-').map(Number);
+  const dataEntrada = new Date(y, mo-1, da, now.getHours(), now.getMinutes());
+  const novoMov = { id: uid(), tipo:'entrada', partId, partNome: part.nome, qtd, data: dataEntrada.toISOString(), obs };
+
+  btn.disabled = true;
+  try{
+    await aplicarMovimentoEstoque(part, qtd, novoMov);
+  }catch(e){
+    showToast('Erro ao salvar entrada. Tente novamente.', true);
+    btn.disabled = false;
+    return;
+  }
+  btn.disabled = false;
+
+  document.getElementById('entQtd').value = 1;
+  document.getElementById('entData').value = todayStr();
+  document.getElementById('entObs').value = '';
+  showToast(`+${qtd} em ${part.nome}`);
+  fillPecaSelects();
+  renderAll();
+}
+
+// ---------- troca ----------
+async function lancarTroca(){
+  const btn = document.getElementById('trocaSaveBtn');
+  const partId = document.getElementById('trocaPeca').value;
+  const qtd = parseInt(document.getElementById('trocaQtd').value) || 0;
+  const scanner = document.getElementById('trocaScanner').value.trim();
+  const obs = document.getElementById('trocaObs').value.trim();
+  const hint = document.getElementById('trocaHint');
+  hint.textContent = '';
+  if(!partId){ showToast('Cadastre uma peça primeiro', true); return; }
+  if(qtd <= 0){ showToast('Informe uma quantidade válida', true); return; }
+  const part = parts.find(p => p.id === partId);
+  if(qtd > part.qtd){
+    hint.textContent = `Estoque insuficiente: disponível ${part.qtd}.`;
+    showToast('Estoque insuficiente para essa troca', true);
+    return;
+  }
+  const novoMov = { id: uid(), tipo:'troca', partId, partNome: part.nome, qtd, scanner, obs, data: new Date().toISOString() };
+
+  btn.disabled = true;
+  try{
+    await aplicarMovimentoEstoque(part, -qtd, novoMov);
+  }catch(e){
+    if(e && e.message === 'ESTOQUE_INSUFICIENTE'){
+      hint.textContent = `Estoque insuficiente: outra pessoa já deu baixa nessa peça. Disponível atual: ${part.qtd}.`;
+      showToast('Estoque insuficiente para essa troca', true);
+    } else {
+      showToast('Erro ao salvar troca. Tente novamente.', true);
+    }
+    btn.disabled = false;
+    return;
+  }
+  btn.disabled = false;
+
+  document.getElementById('trocaQtd').value = 1;
+  document.getElementById('trocaScanner').value = '';
+  document.getElementById('trocaObs').value = '';
+  showToast(`Baixa de ${qtd} em ${part.nome}`);
+  fillPecaSelects();
+  renderAll();
+}
+
+// ---------- chamados ----------
+async function salvarWhatsNumero(){
+  const num = document.getElementById('whatsNumero').value.replace(/\D/g,'');
+  settings.whatsapp = num;
+  await saveSettings();
+  showToast(num ? 'Número salvo' : 'Número removido');
+}
+
+async function abrirChamado(){
+  const scanner = document.getElementById('chScanner').value.trim();
+  const problema = document.getElementById('chProblema').value.trim();
+  if(!scanner || !problema){ showToast('Preencha scanner e descrição', true); return; }
+
+  const ticket = { id: uid(), scanner, problema, status:'aberto', data: new Date().toISOString() };
+  tickets.unshift(ticket);
+  await saveTicket(ticket);
+
+  document.getElementById('chScanner').value = '';
+  document.getElementById('chProblema').value = '';
+  showToast('Chamado aberto');
+
+  if(settings.whatsapp){
+    const texto = `*Novo chamado - Scanner*\n\n*Equipamento:* ${scanner}\n*Problema:* ${problema}\n*Data:* ${fmtDate(new Date().toISOString())}`;
+    let num = settings.whatsapp;
+    if(!num.startsWith('55')) num = '55' + num;
+    window.open(`https://wa.me/${num}?text=${encodeURIComponent(texto)}`, '_blank');
+  }
+
+  renderAll();
+}
+
+async function avancarStatus(id){
+  const t = tickets.find(x => x.id === id);
+  if(!t) return;
+  if(t.status === 'aberto') t.status = 'andamento';
+  else if(t.status === 'andamento') t.status = 'resolvido';
+  await saveTicket(t);
+  renderAll();
+}
+
+async function excluirChamado(id){
+  tickets = tickets.filter(x => x.id !== id);
+  await deleteTicketDoc(id);
+  renderAll();
+}
+
+// ---------- render ----------
+function escapeHtml(s){
+  return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderEstoque(){
+  const list = document.getElementById('estoqueList');
+  document.getElementById('totalPecasTag').textContent = `${parts.length} ${parts.length === 1 ? 'item' : 'itens'}`;
+  if(!parts.length){
+    list.innerHTML = `<div class="empty"><span class="glyph">▢</span>Nenhuma peça cadastrada ainda.<br>Use a aba "Cadastrar" para começar.</div>`;
+    return;
+  }
+  const rows = parts.slice().sort((a,b)=>a.nome.localeCompare(b.nome)).map(p => `
+    <tr>
+      <td>${escapeHtml(p.nome)}${p.codigo ? `<br><span style="color:var(--text-dim);font-size:11px;font-family:var(--mono)">${escapeHtml(p.codigo)}</span>` : ''}</td>
+      <td class="num"><span class="qty-badge ${p.qtd <= 2 ? 'low':'ok'}">${p.qtd}</span></td>
+    </tr>`).join('');
+  list.innerHTML = `<table><thead><tr><th>Peça</th><th style="text-align:right">Qtd.</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function renderMovs(){
+  const list = document.getElementById('movList');
+  if(!movements.length){
+    list.innerHTML = `<div class="empty"><span class="glyph">≡</span>Nenhuma movimentação registrada.</div>`;
+    return;
+  }
+  const recent = movements.slice().sort((a,b)=> new Date(b.data) - new Date(a.data)).slice(0, 12);
+  list.innerHTML = recent.map(m => `
+    <div class="list-item">
+      <div class="top-row">
+        <span><span class="move-type ${m.tipo}">${m.tipo === 'entrada' ? 'Entrada' : 'Troca'}</span> ${escapeHtml(m.partNome)}</span>
+        <span class="num" style="font-weight:700">${m.tipo === 'entrada' ? '+' : '-'}${m.qtd}</span>
+      </div>
+      <div class="meta">${fmtDate(m.data)}${m.scanner ? ' · ' + escapeHtml(m.scanner) : ''}${m.obs ? ' · ' + escapeHtml(m.obs) : ''}</div>
+    </div>`).join('');
+}
+
+function renderChamados(){
+  const list = document.getElementById('chamadosList');
+  document.getElementById('totalChamadosTag').textContent = tickets.length;
+  if(!tickets.length){
+    list.innerHTML = `<div class="empty"><span class="glyph">◎</span>Nenhum chamado aberto.</div>`;
+    return;
+  }
+  const labels = { aberto:'Aberto', andamento:'Em andamento', resolvido:'Resolvido' };
+  list.innerHTML = tickets.slice().sort((a,b)=> new Date(b.data) - new Date(a.data)).map(t => `
+    <div class="list-item">
+      <div class="top-row">
+        <span class="scanner">${escapeHtml(t.scanner)}</span>
+        <span class="status-pill status-${t.status}">${labels[t.status]}</span>
+      </div>
+      <div class="problem">${escapeHtml(t.problema)}</div>
+      <div class="meta">${fmtDate(t.data)}</div>
+      <div class="actions">
+        ${t.status !== 'resolvido' ? `<button class="ghost" onclick="avancarStatus('${t.id}')">${t.status === 'aberto' ? 'Marcar em andamento' : 'Marcar resolvido'}</button>` : ''}
+        <button class="ghost" onclick="excluirChamado('${t.id}')">Excluir</button>
+      </div>
+    </div>`).join('');
+}
+
+function renderAll(){
+  renderEstoque();
+  renderMovs();
+  renderChamados();
+  renderScanners();
+  fillPecaSelects();
+}
+
+// ---------- relatório ----------
+function fillRelScannerSelect(){
+  const nomes = [...new Set(movements.filter(m => m.tipo === 'troca' && m.scanner).map(m => m.scanner))].sort();
+  const sel = document.getElementById('relScanner');
+  const opts = ['<option value="">Todos os scanners</option>'].concat(
+    nomes.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`)
+  );
+  sel.innerHTML = opts.join('');
+}
+
+function getPeriodoRange(periodo, refDateStr){
+  const [y,mo,da] = refDateStr.split('-').map(Number);
+  const ref = new Date(y, mo-1, da);
+  let start, end;
+  if(periodo === 'semana'){
+    const dow = ref.getDay(); // 0=domingo
+    const diffToMonday = (dow === 0 ? -6 : 1 - dow);
+    start = new Date(ref); start.setDate(ref.getDate() + diffToMonday); start.setHours(0,0,0,0);
+    end = new Date(start); end.setDate(start.getDate() + 6); end.setHours(23,59,59,999);
+  } else if(periodo === 'mes'){
+    start = new Date(y, mo-1, 1, 0,0,0,0);
+    end = new Date(y, mo, 0, 23,59,59,999);
+  } else if(periodo === 'ano'){
+    start = new Date(y, 0, 1, 0,0,0,0);
+    end = new Date(y, 11, 31, 23,59,59,999);
+  } else {
+    start = new Date(0);
+    end = new Date(8640000000000000);
+  }
+  return { start, end };
+}
+
+function fmtPeriodoLabel(periodo, start, end){
+  const opts = { day:'2-digit', month:'2-digit', year:'numeric' };
+  if(periodo === 'todos') return 'Todo o período';
+  if(periodo === 'ano') return `Ano de ${start.getFullYear()}`;
+  if(periodo === 'mes') return start.toLocaleDateString('pt-BR', { month:'long', year:'numeric' });
+  return `Semana de ${start.toLocaleDateString('pt-BR', opts)} a ${end.toLocaleDateString('pt-BR', opts)}`;
+}
+
+function gerarRelatorio(){
+  const scannerFiltro = document.getElementById('relScanner').value;
+  const periodo = document.getElementById('relPeriodo').value;
+  const refDateStr = document.getElementById('relData').value || todayStr();
+  const { start, end } = getPeriodoRange(periodo, refDateStr);
+
+  const trocas = movements.filter(m => {
+    if(m.tipo !== 'troca') return false;
+    const d = new Date(m.data);
+    if(d < start || d > end) return false;
+    if(scannerFiltro && m.scanner !== scannerFiltro) return false;
+    return true;
+  }).sort((a,b) => new Date(b.data) - new Date(a.data));
+
+  document.getElementById('relPeriodoTag').textContent = fmtPeriodoLabel(periodo, start, end);
+  document.getElementById('relResultCard').style.display = 'block';
+  const scannerLabel = scannerFiltro ? scannerFiltro : 'Todos os scanners';
+  document.getElementById('relPrintMeta').textContent =
+    `Scanner: ${scannerLabel}  ·  Período: ${fmtPeriodoLabel(periodo, start, end)}  ·  Emitido em: ${fmtDate(new Date().toISOString())}`;
+
+  const resumo = document.getElementById('relResumo');
+  const detalhe = document.getElementById('relDetalhe');
+
+  if(!trocas.length){
+    resumo.innerHTML = `<div class="empty"><span class="glyph">▢</span>Nenhuma troca encontrada nesse período.</div>`;
+    detalhe.innerHTML = '';
+    return;
+  }
+
+  const totalGeral = trocas.reduce((s,m) => s + m.qtd, 0);
+
+  // resumo por peça
+  const porPeca = {};
+  trocas.forEach(m => { porPeca[m.partNome] = (porPeca[m.partNome] || 0) + m.qtd; });
+  const linhasPeca = Object.entries(porPeca).sort((a,b) => b[1]-a[1])
+    .map(([nome,qtd]) => `<tr><td>${escapeHtml(nome)}</td><td class="num"><span class="qty-badge low">${qtd}</span></td></tr>`).join('');
+
+  // resumo por scanner (se "todos")
+  let porScannerHtml = '';
+  if(!scannerFiltro){
+    const porScanner = {};
+    trocas.forEach(m => { const k = m.scanner || '(sem identificação)'; porScanner[k] = (porScanner[k] || 0) + m.qtd; });
+    const linhasScanner = Object.entries(porScanner).sort((a,b) => b[1]-a[1])
+      .map(([nome,qtd]) => `<tr><td>${escapeHtml(nome)}</td><td class="num"><span class="qty-badge low">${qtd}</span></td></tr>`).join('');
+    porScannerHtml = `
+      <h2 style="margin-top:16px">Por scanner</h2>
+      <table><thead><tr><th>Scanner</th><th style="text-align:right">Peças trocadas</th></tr></thead><tbody>${linhasScanner}</tbody></table>`;
+  }
+
+  resumo.innerHTML = `
+    <div class="hint" style="margin-bottom:8px;font-size:13px">Total de trocas: <strong style="color:var(--text)">${trocas.length}</strong> · Peças trocadas: <strong style="color:var(--text)">${totalGeral}</strong></div>
+    <table><thead><tr><th>Peça</th><th style="text-align:right">Qtd. trocada</th></tr></thead><tbody>${linhasPeca}</tbody></table>
+    ${porScannerHtml}
+  `;
+
+  detalhe.innerHTML = `
+    <h2 style="margin-top:16px">Detalhamento</h2>
+    ${trocas.map(m => `
+      <div class="list-item">
+        <div class="top-row">
+          <span><span class="move-type troca">Troca</span> ${escapeHtml(m.partNome)}</span>
+          <span class="num" style="font-weight:700">-${m.qtd}</span>
+        </div>
+        <div class="meta">${fmtDate(m.data)}${m.scanner ? ' · ' + escapeHtml(m.scanner) : ''}${m.obs ? ' · ' + escapeHtml(m.obs) : ''}</div>
+      </div>`).join('')}
+  `;
+}
+
+// ---------- usuários ----------
+function renderUsers(){
+  document.getElementById('totalUsersTag').textContent = users.length;
+  const roleLabels = { administrador:'Administrador', operador:'Operador ID', tecnico:'Técnico' };
+  const list = document.getElementById('usersList');
+  list.innerHTML = users.map(u => `
+    <div class="user-row">
+      <div class="info">
+        <div>${escapeHtml(u.nome)} <span class="role-pill ${u.perfil}">${roleLabels[u.perfil]}</span></div>
+        <div class="login-name">${escapeHtml(u.login)}</div>
+      </div>
+      <div class="actions">
+        <button class="ghost" onclick="editarUsuario('${u.id}')">Editar</button>
+        <button class="ghost" onclick="excluirUsuario('${u.id}')">Excluir</button>
+      </div>
+    </div>`).join('');
+}
+
+function editarUsuario(id){
+  const u = users.find(x => x.id === id);
+  if(!u) return;
+  document.getElementById('userEditId').value = u.id;
+  document.getElementById('userNome').value = u.nome;
+  document.getElementById('userLogin').value = u.login;
+  document.getElementById('userSenha').value = u.senha;
+  document.getElementById('userPerfil').value = u.perfil;
+  document.getElementById('userFormTitle').textContent = 'Editar usuário';
+  document.getElementById('userSaveBtn').textContent = 'Salvar alterações';
+  document.getElementById('userCancelBtn').style.display = 'block';
+}
+
+function cancelarEdicaoUsuario(){
+  document.getElementById('userEditId').value = '';
+  document.getElementById('userNome').value = '';
+  document.getElementById('userLogin').value = '';
+  document.getElementById('userSenha').value = '';
+  document.getElementById('userPerfil').value = 'administrador';
+  document.getElementById('userFormTitle').textContent = 'Adicionar usuário';
+  document.getElementById('userSaveBtn').textContent = 'Salvar usuário';
+  document.getElementById('userCancelBtn').style.display = 'none';
+}
+
+async function salvarUsuario(){
+  const editId = document.getElementById('userEditId').value;
+  const nome = document.getElementById('userNome').value.trim();
+  const login = document.getElementById('userLogin').value.trim();
+  const senha = document.getElementById('userSenha').value;
+  const perfil = document.getElementById('userPerfil').value;
+  if(!nome || !login || !senha){ showToast('Preencha nome, login e senha', true); return; }
+  const loginDuplicado = users.find(u => u.login.toLowerCase() === login.toLowerCase() && u.id !== editId);
+  if(loginDuplicado){ showToast('Já existe um usuário com esse login', true); return; }
+
+  let userSalvo;
+  if(editId){
+    const u = users.find(x => x.id === editId);
+    if(u){
+      if(u.perfil === 'administrador' && perfil !== 'administrador'){
+        const outrosAdmins = users.filter(x => x.perfil === 'administrador' && x.id !== editId);
+        if(!outrosAdmins.length){ showToast('É necessário manter ao menos um administrador', true); return; }
+      }
+      u.nome = nome; u.login = login; u.senha = senha; u.perfil = perfil;
+      userSalvo = u;
+    }
+    showToast('Usuário atualizado');
+  } else {
+    userSalvo = { id: uid(), nome, login, senha, perfil };
+    users.push(userSalvo);
+    showToast('Usuário cadastrado');
+  }
+  await saveUser(userSalvo);
+  cancelarEdicaoUsuario();
+  renderUsers();
+}
+
+async function excluirUsuario(id){
+  const u = users.find(x => x.id === id);
+  if(!u) return;
+  if(u.perfil === 'administrador'){
+    const outrosAdmins = users.filter(x => x.perfil === 'administrador' && x.id !== id);
+    if(!outrosAdmins.length){ showToast('É necessário manter ao menos um administrador', true); return; }
+  }
+  if(currentUser && currentUser.id === id){ showToast('Você não pode excluir seu próprio usuário', true); return; }
+  users = users.filter(x => x.id !== id);
+  await deleteUserDoc(id);
+  renderUsers();
+  showToast('Usuário excluído');
+}
+
+loadUsersAndBoot();
+</script>
+
+</body>
+</html>
