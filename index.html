@@ -179,46 +179,6 @@
   .move-type.entrada{ background:rgba(52,211,153,.14); color:var(--green); }
   .move-type.troca{ background:rgba(239,68,68,.15); color:#f87171; }
 
-  /* ---------- anexos ---------- */
-  input[type="file"]{
-    padding:8px; font-size:12.5px; cursor:pointer;
-  }
-  .anexo-preview{
-    display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;
-  }
-  .anexo-thumb{
-    position:relative; width:64px; height:64px; border-radius:7px; overflow:hidden;
-    border:1px solid var(--border);
-  }
-  .anexo-thumb img{ width:100%; height:100%; object-fit:cover; display:block; }
-  .anexo-thumb .rm{
-    position:absolute; top:2px; right:2px; width:18px; height:18px; border-radius:50%;
-    background:rgba(0,0,0,.7); color:#fff; border:none; font-size:11px; line-height:1;
-    cursor:pointer; display:flex; align-items:center; justify-content:center;
-  }
-  .video-chip{
-    display:flex; align-items:center; justify-content:space-between; gap:8px;
-    margin-top:10px; padding:8px 10px; background:var(--surface-2); border:1px solid var(--border);
-    border-radius:7px; font-size:12.5px;
-  }
-  .video-chip .rm{ background:transparent; border:none; color:var(--text-dim); cursor:pointer; font-size:13px; }
-  .ticket-anexos{
-    display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;
-  }
-  .ticket-anexos img{
-    width:72px; height:72px; object-fit:cover; border-radius:7px; border:1px solid var(--border); cursor:pointer;
-  }
-  .lightbox{
-    display:none; position:fixed; inset:0; background:rgba(0,0,0,.85); z-index:180;
-    align-items:center; justify-content:center; padding:24px;
-  }
-  .lightbox.show{ display:flex; }
-  .lightbox img{ max-width:100%; max-height:90vh; border-radius:8px; }
-  .lightbox .close{
-    position:absolute; top:16px; right:16px; background:var(--surface); border:1px solid var(--border);
-    color:var(--text); width:34px; height:34px; border-radius:50%; cursor:pointer; font-size:16px;
-  }
-
   select[multiple]{ min-height:90px; }
   .hint{ font-size:11.5px; color:var(--text-dim); margin-top:6px; }
 
@@ -333,10 +293,9 @@
   }
 </style>
 
-<!-- Firebase (Firestore + Storage) -->
+<!-- Firebase (Firestore) -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 
 <!-- QR Code: geração (qrcodejs) e leitura via câmera (html5-qrcode) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -509,16 +468,6 @@
       <label>Descrição do problema</label>
       <textarea id="chProblema" placeholder="Descreva o que está acontecendo..."></textarea>
 
-      <label>Anexar imagens (opcional)</label>
-      <input type="file" id="chImagens" accept="image/*" multiple onchange="onImagensSelecionadas(event)">
-      <div class="hint">Até 3 imagens. Elas ficam salvas junto com o chamado.</div>
-      <div class="anexo-preview" id="chImagensPreview"></div>
-
-      <label>Anexar vídeo (opcional)</label>
-      <input type="file" id="chVideo" accept="video/*" onchange="onVideoSelecionado(event)">
-      <div class="hint">Vídeos de até 3MB. Ficam salvos junto com o chamado e podem ser baixados aqui no app (sem precisar enviar por WhatsApp).</div>
-      <div id="chVideoPreview"></div>
-
       <button class="primary info" onclick="abrirChamado()">Abrir chamado</button>
     </div>
     <div class="card">
@@ -616,42 +565,32 @@
   </div>
 </div>
 
-<!-- LIGHTBOX -->
-<div class="lightbox" id="lightbox" onclick="fecharLightbox(event)">
-  <button class="close" onclick="fecharLightbox(event)">✕</button>
-  <img id="lightboxImg" src="" alt="Anexo">
-  <button class="ghost" style="position:absolute;bottom:24px;left:50%;transform:translateX(-50%)" onclick="baixarImagemLightbox(event)">Baixar imagem</button>
-</div>
-
 <div class="toast" id="toast"></div>
 
 <script>
 // ================================================================
 // CONFIGURAÇÃO DO FIREBASE — obrigatório preencher antes de usar
 // 1. Crie um projeto gratuito em https://console.firebase.google.com
-// 2. Ative o "Firestore Database" (modo produção) e o "Storage"
+// 2. Ative o "Firestore Database" (modo produção)
 // 3. Em Configurações do projeto > Geral > Seus apps > Web, copie o
 //    objeto de configuração e cole substituindo os valores abaixo.
-// 4. Em Firestore e Storage, configure as regras (veja instruções
-//    enviadas junto com este arquivo) para liberar leitura/escrita.
+// 4. No Firestore, configure as regras (veja instruções enviadas
+//    junto com este arquivo) para liberar leitura/escrita.
 // ================================================================
 const firebaseConfig = {
   apiKey: "COLOQUE_SUA_API_KEY_AQUI",
   authDomain: "SEU-PROJETO.firebaseapp.com",
   projectId: "SEU-PROJETO",
-  storageBucket: "SEU-PROJETO.appspot.com",
   messagingSenderId: "000000000000",
   appId: "1:000000000000:web:0000000000000000000000"
 };
 
 let db = null;
-let storage = null;
 let firebaseOk = false;
 try{
   if(firebaseConfig.apiKey !== 'COLOQUE_SUA_API_KEY_AQUI'){
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
-    storage = firebase.storage();
     firebaseOk = true;
   }
 }catch(e){
@@ -665,8 +604,6 @@ let settings = { whatsapp: '' };
 let users = [];
 let scanners = [];
 let currentUser = null;
-let chImagensPendentes = []; // { nome, data } aguardando envio no próximo chamado
-let chVideoPendente = null;  // { nome, tipo, data } aguardando envio no próximo chamado
 let qrScannerInstance = null;
 let qrScannerAlvo = null; // 'troca' ou 'chamado' — campo que vai receber o resultado
 
@@ -766,183 +703,6 @@ function showToast(msg, isError){
   t.textContent = msg;
   t.className = 'toast show' + (isError ? ' error' : '');
   setTimeout(()=>{ t.className = 'toast'; }, 2400);
-}
-
-// ---------- anexos: imagens (comprimidas) e vídeo — enviados ao Firebase Storage ----------
-function comprimirImagem(file, maxDim, qualidade){
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Falha ao ler arquivo'));
-    reader.onload = () => {
-      const img = new Image();
-      img.onerror = () => reject(new Error('Arquivo não é uma imagem válida'));
-      img.onload = () => {
-        let { width, height } = img;
-        if(width > maxDim || height > maxDim){
-          if(width > height){ height = Math.round(height * maxDim / width); width = maxDim; }
-          else{ width = Math.round(width * maxDim / height); height = maxDim; }
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = width; canvas.height = height;
-        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', qualidade));
-      };
-      img.src = reader.result;
-    };
-    reader.readAsDataURL(file);
-  });
-}
-
-async function onImagensSelecionadas(event){
-  const files = Array.from(event.target.files || []);
-  if(!files.length) return;
-  if(chImagensPendentes.length + files.length > 3){
-    showToast('Máximo de 3 imagens por chamado', true);
-    event.target.value = '';
-    return;
-  }
-  for(const file of files){
-    try{
-      const data = await comprimirImagem(file, 1000, 0.7);
-      chImagensPendentes.push({ nome: file.name, data });
-    }catch(e){
-      showToast(`Não foi possível processar ${file.name}`, true);
-    }
-  }
-  event.target.value = '';
-  renderImagensPendentes();
-}
-
-function removerImagemPendente(idx){
-  chImagensPendentes.splice(idx, 1);
-  renderImagensPendentes();
-}
-
-function renderImagensPendentes(){
-  const wrap = document.getElementById('chImagensPreview');
-  wrap.innerHTML = chImagensPendentes.map((img, idx) => `
-    <div class="anexo-thumb">
-      <img src="${img.data}" alt="${escapeHtml(img.nome)}">
-      <button class="rm" onclick="removerImagemPendente(${idx})">✕</button>
-    </div>`).join('');
-}
-
-const MAX_VIDEO_BYTES = 20 * 1024 * 1024; // 20MB — o Firebase Storage aguenta tranquilo
-
-function onVideoSelecionado(event){
-  const file = event.target.files && event.target.files[0];
-  if(!file){ chVideoPendente = null; renderVideoPendente(); return; }
-  if(file.size > MAX_VIDEO_BYTES){
-    showToast(`Vídeo muito grande (${(file.size/1024/1024).toFixed(1)}MB). Máximo de 20MB.`, true);
-    event.target.value = '';
-    chVideoPendente = null;
-    renderVideoPendente();
-    return;
-  }
-  const reader = new FileReader();
-  reader.onload = () => {
-    chVideoPendente = { nome: file.name, tipo: file.type || 'video/mp4', data: reader.result };
-    renderVideoPendente();
-  };
-  reader.onerror = () => showToast('Não foi possível ler o vídeo', true);
-  reader.readAsDataURL(file);
-}
-
-function removerVideoPendente(){
-  chVideoPendente = null;
-  document.getElementById('chVideo').value = '';
-  renderVideoPendente();
-}
-
-function renderVideoPendente(){
-  const wrap = document.getElementById('chVideoPreview');
-  if(!chVideoPendente){ wrap.innerHTML = ''; return; }
-  wrap.innerHTML = `
-    <div class="video-chip">
-      <span>🎬 ${escapeHtml(chVideoPendente.nome)}</span>
-      <button class="rm" onclick="removerVideoPendente()">✕ remover</button>
-    </div>`;
-}
-
-async function uploadImagens(ticketId, imagensPendentes){
-  const resultado = [];
-  for(let i = 0; i < imagensPendentes.length; i++){
-    const img = imagensPendentes[i];
-    const path = `anexos/${ticketId}/img${i}.jpg`;
-    const ref = storage.ref().child(path);
-    await ref.putString(img.data, 'data_url');
-    const url = await ref.getDownloadURL();
-    resultado.push({ path, url, nome: img.nome });
-  }
-  return resultado;
-}
-
-async function uploadVideo(ticketId, videoPendente){
-  const ext = (videoPendente.nome.split('.').pop() || 'mp4').toLowerCase();
-  const path = `videos/${ticketId}.${ext}`;
-  const ref = storage.ref().child(path);
-  await ref.putString(videoPendente.data, 'data_url');
-  const url = await ref.getDownloadURL();
-  return { path, url, nome: videoPendente.nome };
-}
-
-async function baixarUrl(url, nomeArquivo){
-  try{
-    const res = await fetch(url);
-    const blob = await res.blob();
-    const objUrl = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = objUrl; a.download = nomeArquivo || 'arquivo';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(objUrl);
-  }catch(e){
-    window.open(url, '_blank');
-  }
-}
-
-let lightboxAtual = null;
-function abrirLightbox(src, nome){
-  lightboxAtual = { src, nome: nome || 'imagem.jpg' };
-  document.getElementById('lightboxImg').src = src;
-  document.getElementById('lightbox').classList.add('show');
-}
-function fecharLightbox(e){
-  if(e) e.stopPropagation();
-  document.getElementById('lightbox').classList.remove('show');
-}
-function baixarImagemLightbox(e){
-  e.stopPropagation();
-  if(lightboxAtual) baixarUrl(lightboxAtual.src, lightboxAtual.nome);
-}
-
-function toggleAnexos(id){
-  const wrap = document.getElementById('anexosWrap-' + id);
-  const t = tickets.find(x => x.id === id);
-  if(!t || !wrap) return;
-  if(wrap.dataset.loaded !== '1'){
-    wrap.innerHTML = (t.imagens || []).map(img =>
-      `<img src="${img.url}" alt="${escapeHtml(img.nome)}" onclick="abrirLightbox('${img.url}', '${escapeHtml(img.nome)}')">`
-    ).join('');
-    wrap.dataset.loaded = '1';
-  }
-  wrap.style.display = wrap.style.display === 'none' ? 'flex' : 'none';
-}
-
-function toggleVideo(id){
-  const wrap = document.getElementById('videoWrap-' + id);
-  const btn = document.getElementById('videoBtn-' + id);
-  const t = tickets.find(x => x.id === id);
-  if(!t || !t.video || !wrap) return;
-  if(wrap.dataset.loaded !== '1'){
-    wrap.innerHTML = `
-      <video controls style="width:100%;border-radius:8px;margin-top:8px" src="${t.video.url}"></video>
-      <button class="ghost" style="margin-top:8px" onclick="baixarUrl('${t.video.url}', '${escapeHtml(t.video.nome)}')">Baixar vídeo</button>
-    `;
-    wrap.dataset.loaded = '1';
-  }
-  const estaVisivel = wrap.style.display !== 'none';
-  wrap.style.display = estaVisivel ? 'none' : 'block';
-  if(btn) btn.textContent = estaVisivel ? 'Ver vídeo' : 'Ocultar vídeo';
 }
 
 // ---------- login / autenticação ----------
@@ -1305,36 +1065,16 @@ async function abrirChamado(){
   const problema = document.getElementById('chProblema').value.trim();
   if(!scanner || !problema){ showToast('Preencha scanner e descrição', true); return; }
 
-  const ticketId = uid();
-  let imagens = [];
-  let video = null;
-
-  if(chImagensPendentes.length){
-    showToast('Enviando imagens...');
-    try{ imagens = await uploadImagens(ticketId, chImagensPendentes); }
-    catch(e){ showToast('Chamado será aberto, mas falhou o envio das imagens', true); }
-  }
-  if(chVideoPendente){
-    showToast('Enviando vídeo...');
-    try{ video = await uploadVideo(ticketId, chVideoPendente); }
-    catch(e){ showToast('Chamado será aberto, mas falhou o envio do vídeo', true); }
-  }
-
-  const ticket = { id: ticketId, scanner, problema, status:'aberto', data: new Date().toISOString(), imagens, video };
+  const ticket = { id: uid(), scanner, problema, status:'aberto', data: new Date().toISOString() };
   tickets.unshift(ticket);
   await saveTicket(ticket);
 
   document.getElementById('chScanner').value = '';
   document.getElementById('chProblema').value = '';
-  chImagensPendentes = [];
-  chVideoPendente = null;
-  document.getElementById('chVideo').value = '';
-  renderImagensPendentes();
-  renderVideoPendente();
   showToast('Chamado aberto');
 
   if(settings.whatsapp){
-    const texto = `*Novo chamado - Scanner*\n\n*Equipamento:* ${scanner}\n*Problema:* ${problema}\n*Data:* ${fmtDate(new Date().toISOString())}\n\n_Imagens e vídeo (se houver) ficam disponíveis no app._`;
+    const texto = `*Novo chamado - Scanner*\n\n*Equipamento:* ${scanner}\n*Problema:* ${problema}\n*Data:* ${fmtDate(new Date().toISOString())}`;
     let num = settings.whatsapp;
     if(!num.startsWith('55')) num = '55' + num;
     window.open(`https://wa.me/${num}?text=${encodeURIComponent(texto)}`, '_blank');
@@ -1353,17 +1093,8 @@ async function avancarStatus(id){
 }
 
 async function excluirChamado(id){
-  const t = tickets.find(x => x.id === id);
   tickets = tickets.filter(x => x.id !== id);
   await deleteTicketDoc(id);
-  if(t){
-    for(const img of (t.imagens || [])){
-      try{ await storage.ref().child(img.path).delete(); }catch(e){ /* ignora se já não existir */ }
-    }
-    if(t.video){
-      try{ await storage.ref().child(t.video.path).delete(); }catch(e){ /* ignora se já não existir */ }
-    }
-  }
   renderAll();
 }
 
@@ -1419,19 +1150,11 @@ function renderChamados(){
         <span class="status-pill status-${t.status}">${labels[t.status]}</span>
       </div>
       <div class="problem">${escapeHtml(t.problema)}</div>
-      <div class="meta">
-        ${fmtDate(t.data)}
-        ${t.imagens && t.imagens.length ? ` · 📷 ${t.imagens.length} imagem(ns)` : ''}
-        ${t.video ? ` · 🎬 ${escapeHtml(t.video.nome)}` : ''}
-      </div>
+      <div class="meta">${fmtDate(t.data)}</div>
       <div class="actions">
         ${t.status !== 'resolvido' ? `<button class="ghost" onclick="avancarStatus('${t.id}')">${t.status === 'aberto' ? 'Marcar em andamento' : 'Marcar resolvido'}</button>` : ''}
-        ${t.imagens && t.imagens.length ? `<button class="ghost" onclick="toggleAnexos('${t.id}')">Ver imagens</button>` : ''}
-        ${t.video ? `<button class="ghost" id="videoBtn-${t.id}" onclick="toggleVideo('${t.id}')">Ver vídeo</button>` : ''}
         <button class="ghost" onclick="excluirChamado('${t.id}')">Excluir</button>
       </div>
-      ${t.imagens && t.imagens.length ? `<div class="ticket-anexos" id="anexosWrap-${t.id}" style="display:none"></div>` : ''}
-      ${t.video ? `<div id="videoWrap-${t.id}" style="display:none"></div>` : ''}
     </div>`).join('');
 }
 
