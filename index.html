@@ -460,9 +460,10 @@
       <input id="trocaQtd" type="number" min="1" value="1">
       <label>Scanner / patrimônio</label>
       <div class="scanner-field-row">
-        <input id="trocaScanner" placeholder="Ex: Scanner 04 - Recepção">
+        <input id="trocaScanner" placeholder="Ex: Scanner 04 - Recepção" oninput="limparScannerInfo('trocaScannerInfo')">
         <button class="ghost" type="button" onclick="abrirQrScanner('troca')">📷 Bipar QR</button>
       </div>
+      <div class="card" id="trocaScannerInfo" style="display:none;margin-top:10px;background:var(--surface-2)"></div>
       <label>Observação</label>
       <textarea id="trocaObs" placeholder="Motivo da troca, defeito apresentado..."></textarea>
       <button class="primary" id="trocaSaveBtn" onclick="lancarTroca()">Registrar troca (baixa no estoque)</button>
@@ -483,7 +484,7 @@
       <label>Scanner / patrimônio</label>
       <input type="hidden" id="chScannerId" value="">
       <div class="scanner-field-row">
-        <input id="chScanner" placeholder="Ex: Scanner 04 - Recepção" oninput="limparScannerInfoChamado()">
+        <input id="chScanner" placeholder="Ex: Scanner 04 - Recepção" oninput="limparScannerInfo('chScannerInfo')">
         <button class="ghost" type="button" onclick="abrirQrScanner('chamado')">📷 Bipar QR</button>
       </div>
       <div class="card" id="chScannerInfo" style="display:none;margin-top:10px;background:var(--surface-2)"></div>
@@ -494,6 +495,7 @@
     </div>
     <div class="card">
       <h2>Chamados <span class="tag" id="totalChamadosTag">0</span></h2>
+      <button class="ghost" style="margin-bottom:10px" onclick="exportarChamadosCSV()">⬇ Exportar finalizados (CSV)</button>
       <div id="chamadosList"></div>
     </div>
   </section>
@@ -1059,26 +1061,61 @@ function abrirQrScanner(alvo){
   });
 }
 
+// Extrai os dados gravados dentro do próprio QR Code (linhas "CHAVE: valor"),
+// permitindo mostrar as informações mesmo que o scanner bipado não esteja
+// (ou não esteja mais) cadastrado localmente neste dispositivo.
+function parseQrTexto(texto){
+  const mapaChaves = {
+    'NOME': 'nome',
+    'MARCA': 'marca',
+    'MODELO': 'modelo',
+    'NUMERO DE SERIE': 'numeroSerie',
+    'TOMBO': 'patrimonio',
+    'LOCAL': 'localizacao'
+  };
+  const dados = {};
+  texto.split('\n').forEach(linha => {
+    const idx = linha.indexOf(':');
+    if(idx === -1) return;
+    const chave = linha.slice(0, idx).trim().toUpperCase();
+    const valor = linha.slice(idx + 1).trim();
+    const campo = mapaChaves[chave];
+    if(campo && valor && valor !== '—') dados[campo] = valor;
+  });
+  return dados;
+}
+
 function onQrScanSuccess(decodedText){
   const match = decodedText.match(/^SCANNER:(.+)$/m);
-  const id = match ? match[1].trim() : decodedText.trim();
-  const s = scanners.find(x => x.id === id);
+  const id = match ? match[1].trim() : null;
+
+  // 1) tenta achar o scanner cadastrado localmente (dados completos: contrato, garantia etc.)
+  let s = id ? scanners.find(x => x.id === id) : null;
+
+  // 2) se não achar localmente, usa as informações gravadas no próprio QR Code
+  if(!s){
+    const dados = parseQrTexto(decodedText);
+    if(dados.nome) s = { id: id || '', ...dados };
+  }
+
   if(!s){
     document.getElementById('qrErro').textContent = 'QR Code não reconhecido. Tente novamente.';
     return;
   }
+
   const campoId = qrScannerAlvo === 'chamado' ? 'chScanner' : 'trocaScanner';
   document.getElementById(campoId).value = s.nome;
   if(qrScannerAlvo === 'chamado'){
-    document.getElementById('chScannerId').value = s.id;
-    exibirScannerInfoChamado(s);
+    document.getElementById('chScannerId').value = s.id || '';
   }
+  const boxId = qrScannerAlvo === 'chamado' ? 'chScannerInfo' : 'trocaScannerInfo';
+  exibirScannerInfo(boxId, s);
   showToast(`Scanner identificado: ${s.nome}`);
   fecharQrScanner();
 }
 
-function exibirScannerInfoChamado(s){
-  const box = document.getElementById('chScannerInfo');
+function exibirScannerInfo(boxId, s){
+  const box = document.getElementById(boxId);
   const linhas = [
     ['Nome / identificação', s.nome],
     ['Marca', s.marca],
@@ -1101,11 +1138,11 @@ function exibirScannerInfoChamado(s){
   box.style.display = 'block';
 }
 
-function limparScannerInfoChamado(){
-  document.getElementById('chScannerId').value = '';
-  const box = document.getElementById('chScannerInfo');
+function limparScannerInfo(boxId){
+  const box = document.getElementById(boxId);
   box.style.display = 'none';
   box.innerHTML = '';
+  if(boxId === 'chScannerInfo') document.getElementById('chScannerId').value = '';
 }
 
 function fecharQrScanner(){
@@ -1201,6 +1238,7 @@ async function lancarTroca(){
   document.getElementById('trocaQtd').value = 1;
   document.getElementById('trocaScanner').value = '';
   document.getElementById('trocaObs').value = '';
+  limparScannerInfo('trocaScannerInfo');
   showToast(`Baixa de ${qtd} em ${part.nome}`);
   fillPecaSelects();
   renderAll();
@@ -1225,7 +1263,7 @@ async function abrirChamado(){
 
   document.getElementById('chScanner').value = '';
   document.getElementById('chProblema').value = '';
-  limparScannerInfoChamado();
+  limparScannerInfo('chScannerInfo');
   showToast('Chamado aberto');
 
   if(settings.whatsapp){
@@ -1242,9 +1280,50 @@ async function avancarStatus(id){
   const t = tickets.find(x => x.id === id);
   if(!t) return;
   if(t.status === 'aberto') t.status = 'andamento';
-  else if(t.status === 'andamento') t.status = 'resolvido';
+  else if(t.status === 'andamento'){
+    t.status = 'resolvido';
+    t.dataResolucao = new Date().toISOString(); // marca quando o chamado foi finalizado
+  }
   await saveTicket(t);
   renderAll();
+}
+
+// ---------- exportação de chamados finalizados (CSV) ----------
+function csvField(valor){
+  const s = (valor ?? '').toString().replace(/"/g, '""');
+  return `"${s}"`;
+}
+
+function exportarChamadosCSV(){
+  const finalizados = tickets.filter(t => t.status === 'resolvido');
+  if(!finalizados.length){
+    showToast('Nenhum chamado finalizado para exportar', true);
+    return;
+  }
+  const cabecalho = ['Scanner', 'Problema', 'Status', 'Data de abertura', 'Data de finalização'].map(csvField).join(';');
+  const linhas = finalizados
+    .slice()
+    .sort((a, b) => new Date(a.dataResolucao || a.data) - new Date(b.dataResolucao || b.data))
+    .map(t => [
+      csvField(t.scanner),
+      csvField(t.problema),
+      csvField('Resolvido'),
+      csvField(fmtDate(t.data)),
+      csvField(t.dataResolucao ? fmtDate(t.dataResolucao) : '')
+    ].join(';'));
+
+  // ponto e vírgula como separador e BOM no início: garante que o Excel em
+  // português abra o CSV corretamente, já com acentuação certa.
+  const csv = '\uFEFF' + [cabecalho, ...linhas].join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `chamados_finalizados_${todayStr()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 async function excluirChamado(id){
@@ -1305,7 +1384,7 @@ function renderChamados(){
         <span class="status-pill status-${t.status}">${labels[t.status]}</span>
       </div>
       <div class="problem">${escapeHtml(t.problema)}</div>
-      <div class="meta">${fmtDate(t.data)}</div>
+      <div class="meta">Aberto em ${fmtDate(t.data)}${t.status === 'resolvido' && t.dataResolucao ? ' · Finalizado em ' + fmtDate(t.dataResolucao) : ''}</div>
       <div class="actions">
         ${t.status !== 'resolvido' ? `<button class="ghost" onclick="avancarStatus('${t.id}')">${t.status === 'aberto' ? 'Marcar em andamento' : 'Marcar resolvido'}</button>` : ''}
         <button class="ghost" onclick="excluirChamado('${t.id}')">Excluir</button>
