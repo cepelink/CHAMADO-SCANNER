@@ -412,6 +412,16 @@
       </div>
       <label>Localização</label>
       <input id="scannerLocal" placeholder="Ex: Recepção - Térreo">
+      <div class="row">
+        <div>
+          <label>Contrato</label>
+          <input id="scannerContrato" placeholder="Ex: Contrato 012/2025">
+        </div>
+        <div>
+          <label>Data da garantia</label>
+          <input id="scannerGarantia" type="date">
+        </div>
+      </div>
       <label>Observações</label>
       <textarea id="scannerObs" placeholder="Opcional"></textarea>
       <button class="primary" onclick="salvarScanner()" id="scannerSaveBtn">Cadastrar scanner</button>
@@ -730,6 +740,19 @@ function fmtDate(iso){
   const d = new Date(iso);
   return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
 }
+function fmtDataSimples(str){
+  // Espera uma string YYYY-MM-DD (valor de <input type="date">) e evita
+  // problema de fuso horário que o `new Date('YYYY-MM-DD')` costuma causar.
+  if(!str) return '';
+  const [y,m,d] = str.split('-').map(Number);
+  return new Date(y, m-1, d).toLocaleDateString('pt-BR');
+}
+function garantiaVencida(str){
+  if(!str) return false;
+  const [y,m,d] = str.split('-').map(Number);
+  const venc = new Date(y, m-1, d, 23,59,59,999);
+  return venc < new Date();
+}
 
 function showToast(msg, isError){
   const t = document.getElementById('toast');
@@ -869,6 +892,9 @@ function renderScanners(){
         ${s.numeroSerie ? ' · Série ' + escapeHtml(s.numeroSerie) : ''}
         ${s.patrimonio ? ' · Tombo ' + escapeHtml(s.patrimonio) : ''}
         ${s.localizacao ? ' · ' + escapeHtml(s.localizacao) : ''}
+        ${s.contrato ? ' · Contrato ' + escapeHtml(s.contrato) : ''}
+        ${s.garantia ? ' · Garantia até ' + fmtDataSimples(s.garantia) : ''}
+        ${s.garantia && garantiaVencida(s.garantia) ? ' <span class="status-pill status-aberto">Garantia vencida</span>' : ''}
       </div>
       <div class="actions">
         <button class="ghost" onclick="imprimirQrScanner('${s.id}')">🖨 Imprimir QR Code</button>
@@ -886,6 +912,8 @@ async function salvarScanner(){
   const numeroSerie = document.getElementById('scannerNumSerie').value.trim();
   const patrimonio = document.getElementById('scannerPatrimonio').value.trim();
   const localizacao = document.getElementById('scannerLocal').value.trim();
+  const contrato = document.getElementById('scannerContrato').value.trim();
+  const garantia = document.getElementById('scannerGarantia').value;
   const obs = document.getElementById('scannerObs').value.trim();
   if(!nome){ showToast('Informe o nome/identificação do scanner', true); return; }
   const nomeDuplicado = scanners.find(s => s.nome.toLowerCase() === nome.toLowerCase() && s.id !== editId);
@@ -897,11 +925,12 @@ async function salvarScanner(){
     if(scannerSalvo){
       scannerSalvo.nome = nome; scannerSalvo.marca = marca; scannerSalvo.modelo = modelo;
       scannerSalvo.numeroSerie = numeroSerie;
-      scannerSalvo.patrimonio = patrimonio; scannerSalvo.localizacao = localizacao; scannerSalvo.obs = obs;
+      scannerSalvo.patrimonio = patrimonio; scannerSalvo.localizacao = localizacao;
+      scannerSalvo.contrato = contrato; scannerSalvo.garantia = garantia; scannerSalvo.obs = obs;
     }
     showToast('Scanner atualizado');
   } else {
-    scannerSalvo = { id: uid(), nome, marca, modelo, numeroSerie, patrimonio, localizacao, obs };
+    scannerSalvo = { id: uid(), nome, marca, modelo, numeroSerie, patrimonio, localizacao, contrato, garantia, obs };
     scanners.push(scannerSalvo);
     showToast('Scanner cadastrado');
   }
@@ -920,6 +949,8 @@ function editarScanner(id){
   document.getElementById('scannerNumSerie').value = s.numeroSerie || '';
   document.getElementById('scannerPatrimonio').value = s.patrimonio || '';
   document.getElementById('scannerLocal').value = s.localizacao || '';
+  document.getElementById('scannerContrato').value = s.contrato || '';
+  document.getElementById('scannerGarantia').value = s.garantia || '';
   document.getElementById('scannerObs').value = s.obs || '';
   document.getElementById('scannerFormTitle').textContent = 'Editar scanner';
   document.getElementById('scannerSaveBtn').textContent = 'Salvar alterações';
@@ -934,6 +965,8 @@ function cancelarEdicaoScanner(){
   document.getElementById('scannerNumSerie').value = '';
   document.getElementById('scannerPatrimonio').value = '';
   document.getElementById('scannerLocal').value = '';
+  document.getElementById('scannerContrato').value = '';
+  document.getElementById('scannerGarantia').value = '';
   document.getElementById('scannerObs').value = '';
   document.getElementById('scannerFormTitle').textContent = 'Cadastrar scanner';
   document.getElementById('scannerSaveBtn').textContent = 'Cadastrar scanner';
@@ -998,6 +1031,8 @@ function imprimirQrScanner(id){
           <div><b>Nº de série:</b> ${escapeHtml(s.numeroSerie || '—')}</div>
           <div><b>Tombo:</b> ${escapeHtml(s.patrimonio || '—')}</div>
           <div><b>Localização:</b> ${escapeHtml(s.localizacao || '—')}</div>
+          <div><b>Contrato:</b> ${escapeHtml(s.contrato || '—')}</div>
+          <div><b>Garantia até:</b> ${s.garantia ? fmtDataSimples(s.garantia) : '—'}</div>
         </div>
         <script>window.onload = function(){ window.print(); };<\/script>
       </body></html>
