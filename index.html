@@ -1262,6 +1262,13 @@ async function abrirChamado(){
   const problema = document.getElementById('chProblema').value.trim();
   if(!scanner || !problema){ showToast('Preencha scanner e descrição', true); return; }
 
+  // Abre a janela em branco AGORA (ainda dentro do clique do usuário),
+  // antes de qualquer await — se não fizer isso, o navegador bloqueia o pop-up.
+  let whatsWin = null;
+  if(settings.whatsapp){
+    whatsWin = window.open('', '_blank');
+  }
+
   // Usa o snapshot capturado ao bipar o QR; se o usuário digitou o nome à mão
   // e ele bate com um scanner já cadastrado, busca os dados completos dele.
   let dadosScanner = chScannerSnapshot;
@@ -1288,7 +1295,14 @@ async function abrirChamado(){
     const texto = `*Novo chamado - Scanner*\n\n*Equipamento:* ${scanner}\n*Problema:* ${problema}\n*Data:* ${fmtDate(new Date().toISOString())}`;
     let num = settings.whatsapp;
     if(!num.startsWith('55')) num = '55' + num;
-    window.open(`https://wa.me/${num}?text=${encodeURIComponent(texto)}`, '_blank');
+    const url = `https://wa.me/${num}?text=${encodeURIComponent(texto)}`;
+    if(whatsWin){
+      whatsWin.location.href = url;
+    } else {
+      // fallback caso o pop-up já tenha sido bloqueado ao abrir em branco
+      window.open(url, '_blank');
+      showToast('Se o WhatsApp não abrir, permita pop-ups para este site', true);
+    }
   }
 
   renderAll();
