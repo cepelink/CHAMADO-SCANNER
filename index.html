@@ -481,10 +481,12 @@
     <div class="card">
       <h2>Abrir chamado</h2>
       <label>Scanner / patrimônio</label>
+      <input type="hidden" id="chScannerId" value="">
       <div class="scanner-field-row">
-        <input id="chScanner" placeholder="Ex: Scanner 04 - Recepção">
+        <input id="chScanner" placeholder="Ex: Scanner 04 - Recepção" oninput="limparScannerInfoChamado()">
         <button class="ghost" type="button" onclick="abrirQrScanner('chamado')">📷 Bipar QR</button>
       </div>
+      <div class="card" id="chScannerInfo" style="display:none;margin-top:10px;background:var(--surface-2)"></div>
       <label>Descrição do problema</label>
       <textarea id="chProblema" placeholder="Descreva o que está acontecendo..."></textarea>
 
@@ -1067,8 +1069,43 @@ function onQrScanSuccess(decodedText){
   }
   const campoId = qrScannerAlvo === 'chamado' ? 'chScanner' : 'trocaScanner';
   document.getElementById(campoId).value = s.nome;
+  if(qrScannerAlvo === 'chamado'){
+    document.getElementById('chScannerId').value = s.id;
+    exibirScannerInfoChamado(s);
+  }
   showToast(`Scanner identificado: ${s.nome}`);
   fecharQrScanner();
+}
+
+function exibirScannerInfoChamado(s){
+  const box = document.getElementById('chScannerInfo');
+  const linhas = [
+    ['Nome / identificação', s.nome],
+    ['Marca', s.marca],
+    ['Modelo', s.modelo],
+    ['Número de série', s.numeroSerie],
+    ['Tombo', s.patrimonio],
+    ['Localização', s.localizacao],
+    ['Contrato', s.contrato],
+    ['Data fim da garantia', s.garantia ? fmtDataSimples(s.garantia) : ''],
+    ['Observações', s.obs]
+  ].filter(([,v]) => v);
+  box.innerHTML = `
+    <div class="hint" style="margin:0 0 8px;color:var(--text)"><b>Dados do scanner bipado</b></div>
+    ${linhas.map(([label,valor]) => `
+      <div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid var(--border);font-size:12.5px">
+        <span style="color:var(--text-dim)">${escapeHtml(label)}</span>
+        <span style="text-align:right">${escapeHtml(valor)}</span>
+      </div>`).join('')}
+  `;
+  box.style.display = 'block';
+}
+
+function limparScannerInfoChamado(){
+  document.getElementById('chScannerId').value = '';
+  const box = document.getElementById('chScannerInfo');
+  box.style.display = 'none';
+  box.innerHTML = '';
 }
 
 function fecharQrScanner(){
@@ -1188,6 +1225,7 @@ async function abrirChamado(){
 
   document.getElementById('chScanner').value = '';
   document.getElementById('chProblema').value = '';
+  limparScannerInfoChamado();
   showToast('Chamado aberto');
 
   if(settings.whatsapp){
