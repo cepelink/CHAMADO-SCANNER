@@ -630,6 +630,7 @@ let scanners = [];
 let currentUser = null;
 let qrScannerInstance = null;
 let qrScannerAlvo = null; // 'troca' ou 'chamado' — campo que vai receber o resultado
+let chScannerSnapshot = null; // guarda os dados completos do scanner bipado/selecionado para o chamado
 
 // ---------- storage helpers (Firestore — dados compartilhados entre todos os usuários) ----------
 async function loadUsersAndBoot(){
@@ -1107,6 +1108,7 @@ function onQrScanSuccess(decodedText){
   document.getElementById(campoId).value = s.nome;
   if(qrScannerAlvo === 'chamado'){
     document.getElementById('chScannerId').value = s.id || '';
+    chScannerSnapshot = s;
   }
   const boxId = qrScannerAlvo === 'chamado' ? 'chScannerInfo' : 'trocaScannerInfo';
   exibirScannerInfo(boxId, s);
@@ -1142,7 +1144,10 @@ function limparScannerInfo(boxId){
   const box = document.getElementById(boxId);
   box.style.display = 'none';
   box.innerHTML = '';
-  if(boxId === 'chScannerInfo') document.getElementById('chScannerId').value = '';
+  if(boxId === 'chScannerInfo'){
+    document.getElementById('chScannerId').value = '';
+    chScannerSnapshot = null;
+  }
 }
 
 function fecharQrScanner(){
@@ -1257,7 +1262,22 @@ async function abrirChamado(){
   const problema = document.getElementById('chProblema').value.trim();
   if(!scanner || !problema){ showToast('Preencha scanner e descrição', true); return; }
 
-  const ticket = { id: uid(), scanner, problema, status:'aberto', data: new Date().toISOString() };
+  // Usa o snapshot capturado ao bipar o QR; se o usuário digitou o nome à mão
+  // e ele bate com um scanner já cadastrado, busca os dados completos dele.
+  let dadosScanner = chScannerSnapshot;
+  if(!dadosScanner){
+    dadosScanner = scanners.find(s => s.nome.toLowerCase() === scanner.toLowerCase()) || null;
+  }
+  const scannerInfo = dadosScanner ? {
+    nome: dadosScanner.nome || scanner,
+    marca: dadosScanner.marca || '',
+    modelo: dadosScanner.modelo || '',
+    numeroSerie: dadosScanner.numeroSerie || '',
+    patrimonio: dadosScanner.patrimonio || '',
+    contrato: dadosScanner.contrato || ''
+  } : null;
+
+  const ticket = { id: uid(), scanner, scannerInfo, problema, status:'aberto', data: new Date().toISOString() };
   tickets.unshift(ticket);
   await saveTicket(ticket);
 
@@ -1367,6 +1387,17 @@ function renderMovs(){
     </div>`).join('');
 }
 
+function fmtScannerInfoChamado(info){
+  if(!info) return '';
+  const partes = [];
+  if(info.marca || info.modelo) partes.push([info.marca, info.modelo].filter(Boolean).map(escapeHtml).join(' '));
+  if(info.numeroSerie) partes.push('Série ' + escapeHtml(info.numeroSerie));
+  if(info.patrimonio) partes.push('Tombo ' + escapeHtml(info.patrimonio));
+  if(info.contrato) partes.push('Contrato ' + escapeHtml(info.contrato));
+  if(!partes.length) return '';
+  return `<div class="meta" style="margin-top:2px">${partes.join(' · ')}</div>`;
+}
+
 function renderChamados(){
   const list = document.getElementById('chamadosList');
   document.getElementById('totalChamadosTag').textContent = tickets.length;
@@ -1381,6 +1412,7 @@ function renderChamados(){
         <span class="scanner">${escapeHtml(t.scanner)}</span>
         <span class="status-pill status-${t.status}">${labels[t.status]}</span>
       </div>
+      ${fmtScannerInfoChamado(t.scannerInfo)}
       <div class="problem">${escapeHtml(t.problema)}</div>
       <div class="meta">Aberto em ${fmtDate(t.data)}${t.status === 'resolvido' && t.dataResolucao ? ' · Finalizado em ' + fmtDate(t.dataResolucao) : ''}</div>
       <div class="actions">
