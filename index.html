@@ -474,6 +474,8 @@
       <select id="trocaPeca"></select>
       <label>Quantidade</label>
       <input id="trocaQtd" type="number" min="1" value="1">
+      <label>Data da troca</label>
+      <input id="trocaData" type="date">
       <label>Scanner / patrimônio</label>
       <div class="scanner-field-row">
         <input id="trocaScanner" placeholder="Ex: Scanner 04 - Recepção" oninput="limparScannerInfo('trocaScannerInfo')">
@@ -696,6 +698,7 @@ async function loadAppData(){
   }catch(e){ settings = { whatsapp: '' }; }
   document.getElementById('whatsNumero').value = settings.whatsapp || '';
   document.getElementById('entData').value = todayStr();
+  document.getElementById('trocaData').value = todayStr();
   renderAll();
 }
 
@@ -877,6 +880,9 @@ document.getElementById('tabs').addEventListener('click', (e)=>{
   if(btn.dataset.view === 'entrada' || btn.dataset.view === 'troca') fillPecaSelects();
   if(btn.dataset.view === 'entrada' && !document.getElementById('entData').value){
     document.getElementById('entData').value = todayStr();
+  }
+  if(btn.dataset.view === 'troca' && !document.getElementById('trocaData').value){
+    document.getElementById('trocaData').value = todayStr();
   }
   if(btn.dataset.view === 'relatorio'){
     fillRelScannerSelect();
@@ -1231,19 +1237,26 @@ async function lancarTroca(){
   const btn = document.getElementById('trocaSaveBtn');
   const partId = document.getElementById('trocaPeca').value;
   const qtd = parseInt(document.getElementById('trocaQtd').value) || 0;
+  const dataInput = document.getElementById('trocaData').value; // formato yyyy-mm-dd
   const scanner = document.getElementById('trocaScanner').value.trim();
   const obs = document.getElementById('trocaObs').value.trim();
   const hint = document.getElementById('trocaHint');
   hint.textContent = '';
   if(!partId){ showToast('Cadastre uma peça primeiro', true); return; }
   if(qtd <= 0){ showToast('Informe uma quantidade válida', true); return; }
+  if(!dataInput){ showToast('Informe a data da troca', true); return; }
   const part = parts.find(p => p.id === partId);
   if(qtd > part.qtd){
     hint.textContent = `Estoque insuficiente: disponível ${part.qtd}.`;
     showToast('Estoque insuficiente para essa troca', true);
     return;
   }
-  const novoMov = { id: uid(), tipo:'troca', partId, partNome: part.nome, qtd, scanner, obs, data: new Date().toISOString() };
+  // Usa a data escolhida pelo usuário, mas com o horário atual
+  // (assim mantém a ordenação correta entre trocas lançadas no mesmo dia).
+  const agora = new Date();
+  const [ano, mes, dia] = dataInput.split('-').map(Number);
+  const dataTroca = new Date(ano, mes - 1, dia, agora.getHours(), agora.getMinutes());
+  const novoMov = { id: uid(), tipo:'troca', partId, partNome: part.nome, qtd, scanner, obs, data: dataTroca.toISOString() };
 
   btn.disabled = true;
   try{
@@ -1261,6 +1274,7 @@ async function lancarTroca(){
   btn.disabled = false;
 
   document.getElementById('trocaQtd').value = 1;
+  document.getElementById('trocaData').value = todayStr();
   document.getElementById('trocaScanner').value = '';
   document.getElementById('trocaObs').value = '';
   limparScannerInfo('trocaScannerInfo');
