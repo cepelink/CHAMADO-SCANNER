@@ -482,6 +482,9 @@
         <button class="ghost" type="button" onclick="abrirQrScanner('troca')">📷 Bipar QR</button>
       </div>
       <div class="card" id="trocaScannerInfo" style="display:none;margin-top:10px;background:var(--surface-2)"></div>
+      <label>Contador de imagens do scanner</label>
+      <input id="trocaContador" type="number" min="0" placeholder="Ex: 152340">
+      <div class="hint" style="margin-top:-8px;margin-bottom:8px">Valor do contador de imagens no momento da troca (visor do scanner), para acompanhar o desgaste da peça.</div>
       <label>Observação</label>
       <textarea id="trocaObs" placeholder="Motivo da troca, defeito apresentado..."></textarea>
       <button class="primary" id="trocaSaveBtn" onclick="lancarTroca()">Registrar troca (baixa no estoque)</button>
@@ -1239,6 +1242,8 @@ async function lancarTroca(){
   const qtd = parseInt(document.getElementById('trocaQtd').value) || 0;
   const dataInput = document.getElementById('trocaData').value; // formato yyyy-mm-dd
   const scanner = document.getElementById('trocaScanner').value.trim();
+  const contadorInput = document.getElementById('trocaContador').value.trim();
+  const contadorImagens = contadorInput ? parseInt(contadorInput) : null;
   const obs = document.getElementById('trocaObs').value.trim();
   const hint = document.getElementById('trocaHint');
   hint.textContent = '';
@@ -1256,7 +1261,7 @@ async function lancarTroca(){
   const agora = new Date();
   const [ano, mes, dia] = dataInput.split('-').map(Number);
   const dataTroca = new Date(ano, mes - 1, dia, agora.getHours(), agora.getMinutes());
-  const novoMov = { id: uid(), tipo:'troca', partId, partNome: part.nome, qtd, scanner, obs, data: dataTroca.toISOString() };
+  const novoMov = { id: uid(), tipo:'troca', partId, partNome: part.nome, qtd, scanner, contadorImagens, obs, data: dataTroca.toISOString() };
 
   btn.disabled = true;
   try{
@@ -1276,6 +1281,7 @@ async function lancarTroca(){
   document.getElementById('trocaQtd').value = 1;
   document.getElementById('trocaData').value = todayStr();
   document.getElementById('trocaScanner').value = '';
+  document.getElementById('trocaContador').value = '';
   document.getElementById('trocaObs').value = '';
   limparScannerInfo('trocaScannerInfo');
   showToast(`Baixa de ${qtd} em ${part.nome}`);
@@ -1484,7 +1490,7 @@ function renderTrocaList(){
         <span><span class="move-type troca">Troca</span> ${escapeHtml(m.partNome)}</span>
         <span class="num" style="font-weight:700">-${m.qtd}</span>
       </div>
-      <div class="meta">Trocado em ${fmtDate(m.data)}${m.scanner ? ' · ' + escapeHtml(m.scanner) : ''}${m.obs ? ' · ' + escapeHtml(m.obs) : ''}</div>
+      <div class="meta">Trocado em ${fmtDate(m.data)}${m.scanner ? ' · ' + escapeHtml(m.scanner) : ''}${m.contadorImagens != null ? ' · Contador: ' + m.contadorImagens.toLocaleString('pt-BR') : ''}${m.obs ? ' · ' + escapeHtml(m.obs) : ''}</div>
     </div>`).join('');
 }
 
@@ -1600,7 +1606,7 @@ function gerarRelatorio(){
           <span><span class="move-type troca">Troca</span> ${escapeHtml(m.partNome)}</span>
           <span class="num" style="font-weight:700">-${m.qtd}</span>
         </div>
-        <div class="meta">${fmtDate(m.data)}${m.scanner ? ' · ' + escapeHtml(m.scanner) : ''}${m.obs ? ' · ' + escapeHtml(m.obs) : ''}</div>
+        <div class="meta">${fmtDate(m.data)}${m.scanner ? ' · ' + escapeHtml(m.scanner) : ''}${m.contadorImagens != null ? ' · Contador: ' + m.contadorImagens.toLocaleString('pt-BR') : ''}${m.obs ? ' · ' + escapeHtml(m.obs) : ''}</div>
       </div>`).join('')}
   `;
 }
