@@ -1342,7 +1342,11 @@ async function enviarEmailChamado(scanner, problema){
       data: fmtDate(new Date().toISOString())
     }, cfg.publicKey);
   }catch(e){
-    showToast('Chamado aberto, mas o e-mail de notificação falhou ao enviar', true);
+    // Mostra o motivo real do EmailJS (ex: "The recipients address is empty",
+    // "Public Key is invalid", origem bloqueada, etc.) em vez de um erro genérico.
+    const motivo = (e && (e.text || e.message)) ? (e.text || e.message) : 'erro desconhecido';
+    console.error('Falha ao enviar e-mail de notificação:', e);
+    showToast('Chamado aberto, mas o e-mail falhou: ' + motivo, true);
   }
 }
 
