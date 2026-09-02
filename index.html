@@ -316,7 +316,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <!-- Envio de e-mail de notificação de chamado (EmailJS) -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/email-js/3.2.0/email.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 </head>
 <body>
 
@@ -1340,7 +1340,7 @@ async function enviarEmailChamado(scanner, problema){
       scanner: scanner,
       problema: problema,
       data: fmtDate(new Date().toISOString())
-    }, cfg.publicKey);
+    }, { publicKey: cfg.publicKey });
   }catch(e){
     // Mostra o motivo real do EmailJS (ex: "The recipients address is empty",
     // "Public Key is invalid", origem bloqueada, etc.) em vez de um erro genérico.
