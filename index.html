@@ -314,6 +314,9 @@
 
 <!-- Leitura de planilhas Excel/CSV para importação de chamados -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<!-- Envio de e-mail de notificação de chamado (EmailJS) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/email-js/3.2.0/email.min.js"></script>
 </head>
 <body>
 
@@ -503,10 +506,21 @@
   <!-- CHAMADOS -->
   <section class="view" id="view-chamados">
     <div class="card">
-      <h2>Notificação via WhatsApp <span class="tag">opcional</span></h2>
-      <label>Número para receber o alerta (com DDD)</label>
-      <input id="whatsNumero" placeholder="Ex: 81999998888">
-      <button class="ghost" style="margin-top:10px" onclick="salvarWhatsNumero()">Salvar número</button>
+      <h2>Notificação por e-mail <span class="tag">opcional</span></h2>
+      <label>E-mail(s) para receber o alerta</label>
+      <input id="emailDestino" placeholder="Ex: suporte@orgao.gov.br, fulano@orgao.gov.br">
+      <div class="hint" style="margin-bottom:8px">Separe múltiplos e-mails por vírgula.</div>
+      <details>
+        <summary style="cursor:pointer;color:var(--text-dim);font-size:12.5px">Configuração avançada (EmailJS)</summary>
+        <div class="hint" style="margin-top:8px">Crie uma conta gratuita em emailjs.com, conecte seu e-mail e cole aqui os 3 códigos gerados lá (Service ID, Template ID e Public Key).</div>
+        <label>Service ID</label>
+        <input id="emailServiceId" placeholder="Ex: service_xxxxxxx">
+        <label>Template ID</label>
+        <input id="emailTemplateId" placeholder="Ex: template_xxxxxxx">
+        <label>Public Key</label>
+        <input id="emailPublicKey" placeholder="Ex: AbCdEfGhIjKlMnOpQr">
+      </details>
+      <button class="ghost" style="margin-top:10px" onclick="salvarEmailConfig()">Salvar configuração de e-mail</button>
     </div>
     <div class="card">
       <h2>Abrir chamado</h2>
@@ -658,7 +672,7 @@ try{
 let parts = [];
 let movements = [];
 let tickets = [];
-let settings = { whatsapp: '' };
+let settings = { email: { destino:'', serviceId:'', templateId:'', publicKey:'' } };
 let users = [];
 let scanners = [];
 let currentUser = null;
@@ -706,9 +720,13 @@ async function loadAppData(){
   }catch(e){ scanners = []; }
   try{
     const doc = await db.collection('settings').doc('app').get();
-    settings = doc.exists ? doc.data() : { whatsapp: '' };
-  }catch(e){ settings = { whatsapp: '' }; }
-  document.getElementById('whatsNumero').value = settings.whatsapp || '';
+    settings = doc.exists ? doc.data() : {};
+  }catch(e){ settings = {}; }
+  if(!settings.email) settings.email = { destino:'', serviceId:'', templateId:'', publicKey:'' };
+  document.getElementById('emailDestino').value = settings.email.destino || '';
+  document.getElementById('emailServiceId').value = settings.email.serviceId || '';
+  document.getElementById('emailTemplateId').value = settings.email.templateId || '';
+  document.getElementById('emailPublicKey').value = settings.email.publicKey || '';
   document.getElementById('entData').value = todayStr();
   document.getElementById('trocaData').value = todayStr();
   renderAll();
@@ -716,7 +734,7 @@ async function loadAppData(){
 
 async function saveSettings(){
   try{ await db.collection('settings').doc('app').set(settings); }
-  catch(e){ showToast('Erro ao salvar número', true); }
+  catch(e){ showToast('Erro ao salvar configuração', true); }
 }
 async function savePart(part){
   try{ await db.collection('parts').doc(part.id).set(part); }
@@ -1299,24 +1317,39 @@ async function lancarTroca(){
 }
 
 // ---------- chamados ----------
-async function salvarWhatsNumero(){
-  const num = document.getElementById('whatsNumero').value.replace(/\D/g,'');
-  settings.whatsapp = num;
+async function salvarEmailConfig(){
+  settings.email = {
+    destino: document.getElementById('emailDestino').value.trim(),
+    serviceId: document.getElementById('emailServiceId').value.trim(),
+    templateId: document.getElementById('emailTemplateId').value.trim(),
+    publicKey: document.getElementById('emailPublicKey').value.trim()
+  };
   await saveSettings();
-  showToast(num ? 'Número salvo' : 'Número removido');
+  showToast('Configuração de e-mail salva');
+}
+
+// Envia o e-mail de notificação de chamado via EmailJS (sem precisar de servidor próprio).
+// Se a configuração ainda não foi preenchida, não faz nada — só a notificação é pulada,
+// o chamado já foi salvo normalmente no sistema de qualquer forma.
+async function enviarEmailChamado(scanner, problema){
+  const cfg = settings.email;
+  if(!cfg || !cfg.destino || !cfg.serviceId || !cfg.templateId || !cfg.publicKey) return;
+  try{
+    await emailjs.send(cfg.serviceId, cfg.templateId, {
+      to_email: cfg.destino,
+      scanner: scanner,
+      problema: problema,
+      data: fmtDate(new Date().toISOString())
+    }, cfg.publicKey);
+  }catch(e){
+    showToast('Chamado aberto, mas o e-mail de notificação falhou ao enviar', true);
+  }
 }
 
 async function abrirChamado(){
   const scanner = document.getElementById('chScanner').value.trim();
   const problema = document.getElementById('chProblema').value.trim();
   if(!scanner || !problema){ showToast('Preencha scanner e descrição', true); return; }
-
-  // Abre a janela em branco AGORA (ainda dentro do clique do usuário),
-  // antes de qualquer await — se não fizer isso, o navegador bloqueia o pop-up.
-  let whatsWin = null;
-  if(settings.whatsapp){
-    whatsWin = window.open('', '_blank');
-  }
 
   // Usa o snapshot capturado ao bipar o QR; se o usuário digitou o nome à mão
   // e ele bate com um scanner já cadastrado, busca os dados completos dele.
@@ -1340,19 +1373,7 @@ async function abrirChamado(){
   document.getElementById('chProblema').value = '';
   showToast('Chamado aberto');
 
-  if(settings.whatsapp){
-    const texto = `*Novo chamado - Scanner*\n\n*Equipamento:* ${scanner}\n*Problema:* ${problema}\n*Data:* ${fmtDate(new Date().toISOString())}`;
-    let num = settings.whatsapp;
-    if(!num.startsWith('55')) num = '55' + num;
-    const url = `https://wa.me/${num}?text=${encodeURIComponent(texto)}`;
-    if(whatsWin){
-      whatsWin.location.href = url;
-    } else {
-      // fallback caso o pop-up já tenha sido bloqueado ao abrir em branco
-      window.open(url, '_blank');
-      showToast('Se o WhatsApp não abrir, permita pop-ups para este site', true);
-    }
-  }
+  enviarEmailChamado(scanner, problema);
 
   renderAll();
 }
