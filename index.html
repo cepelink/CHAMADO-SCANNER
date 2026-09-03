@@ -641,6 +641,8 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
       </select>
       <label>Scanner</label>
       <select id="relManutScanner"></select>
+      <label>Contrato</label>
+      <select id="relManutContrato"></select>
       <label>Período</label>
       <select id="relManutPeriodo">
         <option value="semana">Semana</option>
@@ -1036,6 +1038,7 @@ document.getElementById('tabs').addEventListener('click', (e)=>{
   if(btn.dataset.view === 'relatorio'){
     fillRelScannerSelect();
     fillRelManutScannerSelect();
+    fillRelManutContratoSelect();
     if(!document.getElementById('relData').value) document.getElementById('relData').value = todayStr();
     if(!document.getElementById('relManutData').value) document.getElementById('relManutData').value = todayStr();
   }
@@ -2171,9 +2174,21 @@ function fillRelManutScannerSelect(){
   sel.innerHTML = opts.join('');
 }
 
+function fillRelManutContratoSelect(){
+  const contratosScanners = scanners.map(s => s.contrato).filter(Boolean);
+  const contratosManut = maintenances.map(m => m.scannerInfo && m.scannerInfo.contrato).filter(Boolean);
+  const contratos = [...new Set([...contratosScanners, ...contratosManut])].sort();
+  const sel = document.getElementById('relManutContrato');
+  const opts = ['<option value="">Todos os contratos</option>'].concat(
+    contratos.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`)
+  );
+  sel.innerHTML = opts.join('');
+}
+
 function gerarRelatorioManutencao(){
   const tipoFiltro = document.getElementById('relManutTipo').value;
   const scannerFiltro = document.getElementById('relManutScanner').value;
+  const contratoFiltro = document.getElementById('relManutContrato').value;
   const periodo = document.getElementById('relManutPeriodo').value;
   const refDateStr = document.getElementById('relManutData').value || todayStr();
   const { start, end } = getPeriodoRange(periodo, refDateStr);
@@ -2183,6 +2198,7 @@ function gerarRelatorioManutencao(){
     if(d < start || d > end) return false;
     if(tipoFiltro && m.tipo !== tipoFiltro) return false;
     if(scannerFiltro && m.scanner !== scannerFiltro) return false;
+    if(contratoFiltro && (!m.scannerInfo || m.scannerInfo.contrato !== contratoFiltro)) return false;
     return true;
   }).sort((a,b) => new Date(b.data) - new Date(a.data));
 
@@ -2190,8 +2206,9 @@ function gerarRelatorioManutencao(){
   document.getElementById('relManutResultCard').style.display = 'block';
   let scannerLabel = scannerFiltro ? scannerFiltro : 'Todos os scanners';
   const tipoLabel = tipoFiltro ? (tipoFiltro === 'preventiva' ? 'Preventiva' : 'Corretiva') : 'Todas';
+  const contratoLabel = contratoFiltro ? contratoFiltro : 'Todos os contratos';
   document.getElementById('relManutPrintMeta').textContent =
-    `Tipo: ${tipoLabel}  ·  Scanner: ${scannerLabel}  ·  Período: ${fmtPeriodoLabel(periodo, start, end)}  ·  Emitido em: ${fmtDate(new Date().toISOString())}`;
+    `Tipo: ${tipoLabel}  ·  Scanner: ${scannerLabel}  ·  Contrato: ${contratoLabel}  ·  Período: ${fmtPeriodoLabel(periodo, start, end)}  ·  Emitido em: ${fmtDate(new Date().toISOString())}`;
 
   const resumo = document.getElementById('relManutResumo');
   const detalhe = document.getElementById('relManutDetalhe');
