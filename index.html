@@ -282,6 +282,8 @@
 
   .print-only{ display:none; }
 
+  @page{ margin:16mm 14mm; }
+
   @media print{
     body{ background:#fff; color:#111; }
     header, nav, .no-print, #toast, .card > label, .card > input, .card > select, .card > button.primary{ display:none !important; }
@@ -291,13 +293,16 @@
     .view.active{ display:block !important; }
     #view-relatorio .card{ border:none; padding:0; background:#fff; }
     .print-only{ display:block; }
-    .print-logo{ position:fixed; top:10px; right:14px; width:44px; height:44px; z-index:1000; }
-    .print-header{ border-bottom:2px solid #111; padding-bottom:10px; margin-bottom:16px; padding-right:56px; }
+    /* A logo fica só no cabeçalho da 1ª página (fluxo normal), não mais fixa
+       em todas as páginas — era isso que sobrepunha o conteúdo a partir da 2ª página. */
+    .print-header{ position:relative; border-bottom:2px solid #111; padding-bottom:10px; margin-bottom:16px; padding-right:56px; }
+    .print-logo{ position:absolute; top:0; right:0; width:44px; height:44px; }
     .print-header h1{ font-size:18px; margin:0 0 4px; color:#111; }
     .print-meta{ font-size:12px; color:#444; font-family:var(--mono); }
     h2{ color:#111 !important; }
     h2 .tag{ border-color:#999; color:#444; }
     table{ page-break-inside:auto; }
+    thead{ display:table-header-group; }
     tr{ page-break-inside:avoid; }
     th{ color:#444; border-bottom-color:#999; }
     td{ color:#111; border-bottom-color:#ddd; }
