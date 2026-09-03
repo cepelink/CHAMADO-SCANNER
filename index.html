@@ -245,18 +245,18 @@
   .user-row .actions{ display:flex; gap:6px; flex-shrink:0; }
 
   /* ---------- modais (trocar senha / qr code) ---------- */
-  #senhaModalOverlay, #qrModalOverlay, #editChamadoModalOverlay{
+  #senhaModalOverlay, #qrModalOverlay, #editChamadoModalOverlay, #editTrocaModalOverlay{
     display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:150;
     align-items:center; justify-content:center; padding:20px;
   }
-  #senhaModalOverlay.show, #qrModalOverlay.show, #editChamadoModalOverlay.show{ display:flex; }
+  #senhaModalOverlay.show, #qrModalOverlay.show, #editChamadoModalOverlay.show, #editTrocaModalOverlay.show{ display:flex; }
   .modal-card{
     width:100%; max-width:340px; background:var(--surface); border:1px solid var(--border);
     border-radius:12px; padding:20px;
   }
   .modal-card h2{ margin:0 0 4px; font-size:15px; }
   .modal-card .sub{ font-size:12px; color:var(--text-dim); margin-bottom:6px; }
-  #senhaErro, #qrErro, #editChamadoErro{ color:var(--red); font-size:12.5px; margin-top:8px; min-height:16px; }
+  #senhaErro, #qrErro, #editChamadoErro, #editTrocaErro{ color:var(--red); font-size:12.5px; margin-top:8px; min-height:16px; }
   .modal-actions{ display:flex; gap:8px; margin-top:6px; }
   .modal-actions button.primary{ margin-top:0; }
 
@@ -769,6 +769,30 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
     <div class="modal-actions">
       <button class="ghost" style="flex:1" onclick="fecharEditarChamado()">Cancelar</button>
       <button class="primary ok" style="flex:1" onclick="salvarEdicaoChamado()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL EDITAR TROCA -->
+<div id="editTrocaModalOverlay">
+  <div class="modal-card">
+    <h2>Editar troca</h2>
+    <div class="sub">Ajuste o scanner, o contador de imagens ou a observação desta troca.</div>
+    <input type="hidden" id="editTrocaId" value="">
+    <label>Scanner / patrimônio</label>
+    <div class="scanner-field-row">
+      <input id="editTrocaScanner" placeholder="Ex: Scanner 04 - Recepção" oninput="limparScannerInfo('editTrocaScannerInfo')">
+      <button class="ghost" type="button" onclick="abrirQrScanner('trocaEdit')">📷 Bipar QR</button>
+    </div>
+    <div class="card" id="editTrocaScannerInfo" style="display:none;margin-top:10px;background:var(--surface-2)"></div>
+    <label>Contador de imagens do scanner</label>
+    <input id="editTrocaContador" type="number" min="0" placeholder="Ex: 152340">
+    <label>Observação</label>
+    <textarea id="editTrocaObs" placeholder="Motivo da troca, defeito apresentado..."></textarea>
+    <div id="editTrocaErro"></div>
+    <div class="modal-actions">
+      <button class="ghost" style="flex:1" onclick="fecharEditarTroca()">Cancelar</button>
+      <button class="primary ok" style="flex:1" onclick="salvarEdicaoTroca()">Salvar</button>
     </div>
   </div>
 </div>
@@ -1317,7 +1341,8 @@ function onQrScanSuccess(decodedText){
   const alvoMap = {
     chamado: { campo: 'chScanner', box: 'chScannerInfo' },
     troca: { campo: 'trocaScanner', box: 'trocaScannerInfo' },
-    manutencao: { campo: 'manutScanner', box: 'manutScannerInfo' }
+    manutencao: { campo: 'manutScanner', box: 'manutScannerInfo' },
+    trocaEdit: { campo: 'editTrocaScanner', box: 'editTrocaScannerInfo' }
   };
   const alvo = alvoMap[qrScannerAlvo];
   document.getElementById(alvo.campo).value = s.nome;
@@ -2038,7 +2063,54 @@ function renderTrocaList(){
         <span class="num" style="font-weight:700">-${m.qtd}</span>
       </div>
       <div class="meta">Trocado em ${fmtDate(m.data)}${m.scanner ? ' · ' + escapeHtml(m.scanner) : ''}${m.contadorImagens != null ? ' · Contador: ' + m.contadorImagens.toLocaleString('pt-BR') : ''}${m.obs ? ' · ' + escapeHtml(m.obs) : ''}</div>
+      <div class="actions">
+        <button class="ghost" onclick="abrirEditarTroca('${m.id}')">✏ Editar</button>
+      </div>
     </div>`).join('');
+}
+
+// ---------- edição de troca (scanner, contador de imagens, observação) ----------
+function abrirEditarTroca(id){
+  const m = movements.find(x => x.id === id && x.tipo === 'troca');
+  if(!m) return;
+  document.getElementById('editTrocaId').value = m.id;
+  document.getElementById('editTrocaScanner').value = m.scanner || '';
+  document.getElementById('editTrocaContador').value = m.contadorImagens != null ? m.contadorImagens : '';
+  document.getElementById('editTrocaObs').value = m.obs || '';
+  document.getElementById('editTrocaErro').textContent = '';
+  limparScannerInfo('editTrocaScannerInfo');
+  // se o nome bate com um scanner já cadastrado, mostra os dados completos dele
+  const scannerCad = m.scanner ? scanners.find(s => s.nome === m.scanner) : null;
+  if(scannerCad) exibirScannerInfo('editTrocaScannerInfo', scannerCad);
+  document.getElementById('editTrocaModalOverlay').classList.add('show');
+}
+
+function fecharEditarTroca(){
+  document.getElementById('editTrocaModalOverlay').classList.remove('show');
+}
+
+async function salvarEdicaoTroca(){
+  const id = document.getElementById('editTrocaId').value;
+  const m = movements.find(x => x.id === id && x.tipo === 'troca');
+  if(!m) return;
+
+  const scanner = document.getElementById('editTrocaScanner').value.trim();
+  const contadorInput = document.getElementById('editTrocaContador').value.trim();
+  const obs = document.getElementById('editTrocaObs').value.trim();
+  const erro = document.getElementById('editTrocaErro');
+  erro.textContent = '';
+
+  if(!scanner){ erro.textContent = 'Informe o scanner.'; return; }
+
+  // não mexe em quantidade/peça/estoque — só corrige os dados de identificação do registro
+  m.scanner = scanner;
+  m.contadorImagens = contadorInput ? parseInt(contadorInput) : null;
+  m.obs = obs;
+
+  await saveMovement(m);
+  fecharEditarTroca();
+  showToast('Troca atualizada');
+  renderAll();
 }
 
 function renderManutList(){
