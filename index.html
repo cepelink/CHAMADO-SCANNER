@@ -249,6 +249,9 @@
     display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:150;
     align-items:center; justify-content:center; padding:20px;
   }
+  /* o modal de QR precisa ficar sempre por cima de outros modais que possam
+     estar abertos ao mesmo tempo (ex: bipar QR de dentro do modal de editar troca) */
+  #qrModalOverlay{ z-index:160; }
   #senhaModalOverlay.show, #qrModalOverlay.show, #editChamadoModalOverlay.show, #editTrocaModalOverlay.show{ display:flex; }
   .modal-card{
     width:100%; max-width:340px; background:var(--surface); border:1px solid var(--border);
