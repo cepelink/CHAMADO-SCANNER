@@ -161,6 +161,8 @@
   .status-aberto{ background:rgba(185,28,28,.10); color:var(--red); }
   .status-andamento{ background:rgba(180,83,9,.10); color:var(--amber); }
   .status-resolvido{ background:rgba(21,128,61,.10); color:var(--green); }
+  .status-preventiva{ background:rgba(14,116,144,.10); color:var(--cyan); }
+  .status-corretiva{ background:rgba(185,28,28,.10); color:var(--red); }
 
   .list-item{
     padding:12px 0; border-bottom:1px solid var(--border);
@@ -243,18 +245,18 @@
   .user-row .actions{ display:flex; gap:6px; flex-shrink:0; }
 
   /* ---------- modais (trocar senha / qr code) ---------- */
-  #senhaModalOverlay, #qrModalOverlay{
+  #senhaModalOverlay, #qrModalOverlay, #editChamadoModalOverlay{
     display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:150;
     align-items:center; justify-content:center; padding:20px;
   }
-  #senhaModalOverlay.show, #qrModalOverlay.show{ display:flex; }
+  #senhaModalOverlay.show, #qrModalOverlay.show, #editChamadoModalOverlay.show{ display:flex; }
   .modal-card{
     width:100%; max-width:340px; background:var(--surface); border:1px solid var(--border);
     border-radius:12px; padding:20px;
   }
   .modal-card h2{ margin:0 0 4px; font-size:15px; }
   .modal-card .sub{ font-size:12px; color:var(--text-dim); margin-bottom:6px; }
-  #senhaErro, #qrErro{ color:var(--red); font-size:12.5px; margin-top:8px; min-height:16px; }
+  #senhaErro, #qrErro, #editChamadoErro{ color:var(--red); font-size:12.5px; margin-top:8px; min-height:16px; }
   .modal-actions{ display:flex; gap:8px; margin-top:6px; }
   .modal-actions button.primary{ margin-top:0; }
 
@@ -370,6 +372,7 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
   <button data-view="scanners" data-roles="administrador">Scanners</button>
   <button data-view="entrada" data-roles="administrador">Entrada</button>
   <button data-view="troca" data-roles="administrador,operador">Troca</button>
+  <button data-view="manutencao" data-roles="administrador,operador,tecnico">Manutenção</button>
   <button data-view="chamados" data-roles="administrador,operador,tecnico">Chamados</button>
   <button data-view="relatorio" data-roles="administrador">Relatório</button>
   <button data-view="usuarios" data-roles="administrador">Usuários</button>
@@ -506,6 +509,55 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
     </div>
   </section>
 
+  <!-- MANUTENÇÃO -->
+  <section class="view" id="view-manutencao">
+    <div class="card">
+      <h2>Manutenção</h2>
+      <label>Tipo de manutenção</label>
+      <select id="manutTipo" onchange="alternarTipoManutencao()">
+        <option value="preventiva">Preventiva (troca de consumíveis)</option>
+        <option value="corretiva">Corretiva (peça quebrou)</option>
+      </select>
+      <label>Data</label>
+      <input id="manutData" type="date">
+      <label>Scanner / patrimônio</label>
+      <input type="hidden" id="manutScannerId" value="">
+      <div class="scanner-field-row">
+        <input id="manutScanner" placeholder="Ex: Scanner 04 - Recepção" oninput="limparScannerInfo('manutScannerInfo')">
+        <button class="ghost" type="button" onclick="abrirQrScanner('manutencao')">📷 Bipar QR</button>
+      </div>
+      <div class="card" id="manutScannerInfo" style="display:none;margin-top:10px;background:var(--surface-2)"></div>
+
+      <div id="manutPreventivaBox">
+        <label style="margin-top:14px">Consumível trocado</label>
+        <select id="manutPeca"></select>
+        <label>Quantidade</label>
+        <input id="manutQtd" type="number" min="1" value="1">
+        <button class="ghost" type="button" onclick="adicionarItemManutencao()">+ Adicionar item à lista</button>
+        <div id="manutItensList" style="margin-top:10px"></div>
+      </div>
+
+      <div id="manutCorretivaBox" style="display:none">
+        <label style="margin-top:14px">Peça que quebrou</label>
+        <select id="manutPecaQuebrada"></select>
+        <div class="hint" style="margin-top:-8px;margin-bottom:8px">Se a peça não estiver cadastrada no estoque, descreva no campo de observação abaixo.</div>
+        <label>Quantidade</label>
+        <input id="manutQtdCorretiva" type="number" min="1" value="1">
+        <label>Custo (R$)</label>
+        <input id="manutCusto" type="number" min="0" step="0.01" placeholder="Ex: 350.00">
+      </div>
+
+      <label>Observação</label>
+      <textarea id="manutObs" placeholder="Detalhes da manutenção, peça quebrada, causa..."></textarea>
+      <button class="primary" id="manutSaveBtn" onclick="lancarManutencao()">Registrar manutenção</button>
+      <div class="hint" id="manutHint"></div>
+    </div>
+    <div class="card">
+      <h2>Últimas manutenções</h2>
+      <div id="manutList"></div>
+    </div>
+  </section>
+
   <!-- CHAMADOS -->
   <section class="view" id="view-chamados">
     <div class="card">
@@ -578,6 +630,40 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
       <div id="relResumo"></div>
       <div id="relDetalhe" style="margin-top:10px"></div>
     </div>
+
+    <div class="card" style="margin-top:20px">
+      <h2>Relatório de manutenções <span class="tag">preventiva / corretiva</span></h2>
+      <label>Tipo</label>
+      <select id="relManutTipo">
+        <option value="">Todas</option>
+        <option value="preventiva">Preventiva</option>
+        <option value="corretiva">Corretiva</option>
+      </select>
+      <label>Scanner</label>
+      <select id="relManutScanner"></select>
+      <label>Contrato</label>
+      <select id="relManutContrato"></select>
+      <label>Período</label>
+      <select id="relManutPeriodo">
+        <option value="semana">Semana</option>
+        <option value="mes">Mês</option>
+        <option value="ano">Ano</option>
+        <option value="todos">Todo o período</option>
+      </select>
+      <label id="relManutDataLabel">Data de referência</label>
+      <input id="relManutData" type="date">
+      <button class="primary info" onclick="gerarRelatorioManutencao()">Gerar relatório</button>
+    </div>
+    <div class="card" id="relManutResultCard" style="display:none">
+      <div class="print-only print-header">
+        <h1>Relatório de Manutenções — Scanners</h1>
+        <div class="print-meta" id="relManutPrintMeta"></div>
+      </div>
+      <h2>Resultado <span class="tag" id="relManutPeriodoTag"></span></h2>
+      <button class="ghost no-print" style="margin-bottom:12px" onclick="window.print()">🖨 Imprimir / Salvar em PDF</button>
+      <div id="relManutResumo"></div>
+      <div id="relManutDetalhe" style="margin-top:10px"></div>
+    </div>
   </section>
 
   <!-- USUÁRIOS -->
@@ -603,6 +689,23 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
     <div class="card">
       <h2>Usuários cadastrados <span class="tag" id="totalUsersTag">0</span></h2>
       <div id="usersList"></div>
+    </div>
+  </section>
+
+  <!-- IMPRESSÃO DE UMA MANUTENÇÃO ESPECÍFICA (não aparece na navegação) -->
+  <section class="view" id="view-manut-print">
+    <div class="card">
+      <div class="print-only print-header">
+        <h1>Registro de Manutenção — Scanners</h1>
+        <div class="print-meta" id="manutPrintMeta"></div>
+      </div>
+      <h2>Manutenção <span class="tag" id="manutPrintTipoTag"></span></h2>
+      <button class="ghost no-print" style="margin-bottom:12px" onclick="window.print()">🖨 Imprimir / Salvar em PDF</button>
+      <div id="manutPrintScannerInfo"></div>
+      <h2 style="margin-top:16px">Itens</h2>
+      <div id="manutPrintItens"></div>
+      <div id="manutPrintCusto"></div>
+      <div id="manutPrintObs"></div>
     </div>
   </section>
 
@@ -637,6 +740,36 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
     <div id="qrReaderRegion"></div>
     <div id="qrErro"></div>
     <button class="ghost" style="margin-top:10px;width:100%" onclick="fecharQrScanner()">Cancelar</button>
+  </div>
+</div>
+
+<!-- MODAL EDITAR CHAMADO -->
+<div id="editChamadoModalOverlay">
+  <div class="modal-card">
+    <h2>Editar chamado</h2>
+    <div class="sub">Ajuste os dados do chamado, incluindo a data de abertura.</div>
+    <input type="hidden" id="editChamadoId" value="">
+    <label>Scanner / patrimônio</label>
+    <input id="editChamadoScanner" placeholder="Ex: Scanner 04 - Recepção">
+    <label>Descrição do problema</label>
+    <textarea id="editChamadoProblema" placeholder="Descreva o que está acontecendo..."></textarea>
+    <label>Data de abertura</label>
+    <input id="editChamadoData" type="date">
+    <label>Status</label>
+    <select id="editChamadoStatus" onchange="atualizarVisibilidadeDataResolucaoEdicao()">
+      <option value="aberto">Aberto</option>
+      <option value="andamento">Em andamento</option>
+      <option value="resolvido">Resolvido</option>
+    </select>
+    <div id="editChamadoDataResolucaoWrap">
+      <label>Data de finalização</label>
+      <input id="editChamadoDataResolucao" type="date">
+    </div>
+    <div id="editChamadoErro"></div>
+    <div class="modal-actions">
+      <button class="ghost" style="flex:1" onclick="fecharEditarChamado()">Cancelar</button>
+      <button class="primary ok" style="flex:1" onclick="salvarEdicaoChamado()">Salvar</button>
+    </div>
   </div>
 </div>
 
@@ -675,6 +808,7 @@ try{
 let parts = [];
 let movements = [];
 let tickets = [];
+let maintenances = [];
 let settings = { email: { destino:'', serviceId:'', templateId:'', publicKey:'' } };
 let users = [];
 let scanners = [];
@@ -682,6 +816,8 @@ let currentUser = null;
 let qrScannerInstance = null;
 let qrScannerAlvo = null; // 'troca' ou 'chamado' — campo que vai receber o resultado
 let chScannerSnapshot = null; // guarda os dados completos do scanner bipado/selecionado para o chamado
+let manutScannerSnapshot = null; // idem, para a tela de manutenção
+let manutItens = []; // lista temporária de itens (consumíveis) da manutenção preventiva antes de salvar
 
 // ---------- storage helpers (Firestore — dados compartilhados entre todos os usuários) ----------
 async function loadUsersAndBoot(){
@@ -718,6 +854,10 @@ async function loadAppData(){
     tickets = snap.docs.map(d => d.data());
   }catch(e){ tickets = []; }
   try{
+    const snap = await db.collection('maintenances').get();
+    maintenances = snap.docs.map(d => d.data());
+  }catch(e){ maintenances = []; }
+  try{
     const snap = await db.collection('scanners').get();
     scanners = snap.docs.map(d => d.data());
   }catch(e){ scanners = []; }
@@ -732,6 +872,7 @@ async function loadAppData(){
   document.getElementById('emailPublicKey').value = settings.email.publicKey || '';
   document.getElementById('entData').value = todayStr();
   document.getElementById('trocaData').value = todayStr();
+  document.getElementById('manutData').value = todayStr();
   renderAll();
 }
 
@@ -773,6 +914,10 @@ async function aplicarMovimentoEstoque(part, delta, movBase){
 async function saveTicket(t){
   try{ await db.collection('tickets').doc(t.id).set(t); }
   catch(e){ showToast('Erro ao salvar chamado', true); }
+}
+async function saveMaintenance(m){
+  try{ await db.collection('maintenances').doc(m.id).set(m); }
+  catch(e){ showToast('Erro ao salvar manutenção', true); }
 }
 async function deleteTicketDoc(id){
   try{ await db.collection('tickets').doc(id).delete(); }
@@ -910,16 +1055,22 @@ document.getElementById('tabs').addEventListener('click', (e)=>{
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById('view-' + btn.dataset.view).classList.add('active');
-  if(btn.dataset.view === 'entrada' || btn.dataset.view === 'troca') fillPecaSelects();
+  if(btn.dataset.view === 'entrada' || btn.dataset.view === 'troca' || btn.dataset.view === 'manutencao') fillPecaSelects();
   if(btn.dataset.view === 'entrada' && !document.getElementById('entData').value){
     document.getElementById('entData').value = todayStr();
   }
   if(btn.dataset.view === 'troca' && !document.getElementById('trocaData').value){
     document.getElementById('trocaData').value = todayStr();
   }
+  if(btn.dataset.view === 'manutencao' && !document.getElementById('manutData').value){
+    document.getElementById('manutData').value = todayStr();
+  }
   if(btn.dataset.view === 'relatorio'){
     fillRelScannerSelect();
+    fillRelManutScannerSelect();
+    fillRelManutContratoSelect();
     if(!document.getElementById('relData').value) document.getElementById('relData').value = todayStr();
+    if(!document.getElementById('relManutData').value) document.getElementById('relManutData').value = todayStr();
   }
   if(btn.dataset.view === 'usuarios') renderUsers();
 });
@@ -1163,14 +1314,22 @@ function onQrScanSuccess(decodedText){
     return;
   }
 
-  const campoId = qrScannerAlvo === 'chamado' ? 'chScanner' : 'trocaScanner';
-  document.getElementById(campoId).value = s.nome;
+  const alvoMap = {
+    chamado: { campo: 'chScanner', box: 'chScannerInfo' },
+    troca: { campo: 'trocaScanner', box: 'trocaScannerInfo' },
+    manutencao: { campo: 'manutScanner', box: 'manutScannerInfo' }
+  };
+  const alvo = alvoMap[qrScannerAlvo];
+  document.getElementById(alvo.campo).value = s.nome;
   if(qrScannerAlvo === 'chamado'){
     document.getElementById('chScannerId').value = s.id || '';
     chScannerSnapshot = s;
   }
-  const boxId = qrScannerAlvo === 'chamado' ? 'chScannerInfo' : 'trocaScannerInfo';
-  exibirScannerInfo(boxId, s);
+  if(qrScannerAlvo === 'manutencao'){
+    document.getElementById('manutScannerId').value = s.id || '';
+    manutScannerSnapshot = s;
+  }
+  exibirScannerInfo(alvo.box, s);
   showToast(`Scanner identificado: ${s.nome}`);
   fecharQrScanner();
 }
@@ -1207,6 +1366,10 @@ function limparScannerInfo(boxId){
     document.getElementById('chScannerId').value = '';
     chScannerSnapshot = null;
   }
+  if(boxId === 'manutScannerInfo'){
+    document.getElementById('manutScannerId').value = '';
+    manutScannerSnapshot = null;
+  }
 }
 
 function fecharQrScanner(){
@@ -1229,6 +1392,8 @@ function fillPecaSelects(){
   const empty = '<option value="">Nenhuma peça cadastrada</option>';
   document.getElementById('entPeca').innerHTML = parts.length ? opts : empty;
   document.getElementById('trocaPeca').innerHTML = parts.length ? opts : empty;
+  document.getElementById('manutPeca').innerHTML = parts.length ? opts : empty;
+  document.getElementById('manutPecaQuebrada').innerHTML = '<option value="">Não cadastrada / não aplicável</option>' + opts;
 }
 
 // ---------- entrada ----------
@@ -1319,6 +1484,146 @@ async function lancarTroca(){
   renderAll();
 }
 
+// ---------- manutenção (preventiva / corretiva) ----------
+function alternarTipoManutencao(){
+  const tipo = document.getElementById('manutTipo').value;
+  document.getElementById('manutPreventivaBox').style.display = tipo === 'preventiva' ? 'block' : 'none';
+  document.getElementById('manutCorretivaBox').style.display = tipo === 'corretiva' ? 'block' : 'none';
+}
+
+function adicionarItemManutencao(){
+  const partId = document.getElementById('manutPeca').value;
+  const qtd = parseInt(document.getElementById('manutQtd').value) || 0;
+  if(!partId){ showToast('Selecione uma peça', true); return; }
+  if(qtd <= 0){ showToast('Informe uma quantidade válida', true); return; }
+  const part = parts.find(p => p.id === partId);
+  const existente = manutItens.find(i => i.partId === partId);
+  if(existente){ existente.qtd += qtd; }
+  else { manutItens.push({ partId, partNome: part.nome, qtd }); }
+  document.getElementById('manutQtd').value = 1;
+  renderManutItens();
+}
+
+function removerItemManutencao(partId){
+  manutItens = manutItens.filter(i => i.partId !== partId);
+  renderManutItens();
+}
+
+function renderManutItens(){
+  const box = document.getElementById('manutItensList');
+  if(!box) return;
+  if(!manutItens.length){ box.innerHTML = ''; return; }
+  box.innerHTML = manutItens.map(i => `
+    <div class="list-item" style="padding:8px 10px">
+      <div class="top-row">
+        <span>${escapeHtml(i.partNome)}</span>
+        <span style="display:flex;align-items:center;gap:8px">
+          <span class="num" style="font-weight:700">-${i.qtd}</span>
+          <button class="ghost" style="padding:2px 8px" type="button" onclick="removerItemManutencao('${i.partId}')">✕</button>
+        </span>
+      </div>
+    </div>`).join('');
+}
+
+async function lancarManutencao(){
+  const btn = document.getElementById('manutSaveBtn');
+  const hint = document.getElementById('manutHint');
+  hint.textContent = '';
+  const tipo = document.getElementById('manutTipo').value;
+  const scanner = document.getElementById('manutScanner').value.trim();
+  const dataInput = document.getElementById('manutData').value;
+  const obs = document.getElementById('manutObs').value.trim();
+  if(!dataInput){ showToast('Informe a data', true); return; }
+
+  let itens = [];
+  let custo = null;
+
+  if(tipo === 'preventiva'){
+    if(!manutItens.length){ showToast('Adicione ao menos um item à lista', true); return; }
+    itens = manutItens.slice();
+    for(const it of itens){
+      const part = parts.find(p => p.id === it.partId);
+      if(!part || it.qtd > part.qtd){
+        hint.textContent = `Estoque insuficiente para ${it.partNome}.`;
+        showToast('Estoque insuficiente para um dos itens', true);
+        return;
+      }
+    }
+  } else {
+    const partId = document.getElementById('manutPecaQuebrada').value;
+    const qtd = parseInt(document.getElementById('manutQtdCorretiva').value) || 1;
+    const custoInput = document.getElementById('manutCusto').value.trim();
+    custo = custoInput ? parseFloat(custoInput) : null;
+    if(partId){
+      const part = parts.find(p => p.id === partId);
+      if(part && qtd > part.qtd){
+        hint.textContent = `Estoque insuficiente: disponível ${part.qtd}.`;
+        showToast('Estoque insuficiente para essa peça', true);
+        return;
+      }
+      itens = [{ partId, partNome: part.nome, qtd }];
+    }
+  }
+
+  // Usa o snapshot capturado ao bipar o QR; se digitado à mão e bater com
+  // um scanner já cadastrado, busca os dados completos dele.
+  let dadosScanner = manutScannerSnapshot;
+  if(!dadosScanner && scanner){
+    dadosScanner = scanners.find(s => s.nome.toLowerCase() === scanner.toLowerCase()) || null;
+  }
+  const scannerInfo = dadosScanner ? {
+    nome: dadosScanner.nome || scanner,
+    marca: dadosScanner.marca || '',
+    modelo: dadosScanner.modelo || '',
+    numeroSerie: dadosScanner.numeroSerie || '',
+    patrimonio: dadosScanner.patrimonio || '',
+    contrato: dadosScanner.contrato || ''
+  } : null;
+
+  const agora = new Date();
+  const [ano, mes, dia] = dataInput.split('-').map(Number);
+  const dataManut = new Date(ano, mes - 1, dia, agora.getHours(), agora.getMinutes());
+
+  const maintenance = { id: uid(), tipo, scanner, scannerInfo, itens, custo, obs, data: dataManut.toISOString() };
+
+  btn.disabled = true;
+  try{
+    // dá baixa no estoque de cada item, um a um, com movimentação vinculada
+    for(const it of itens){
+      const part = parts.find(p => p.id === it.partId);
+      const movBase = {
+        id: uid(),
+        tipo: tipo === 'preventiva' ? 'manutencao_preventiva' : 'manutencao_corretiva',
+        partId: it.partId, partNome: it.partNome, qtd: it.qtd,
+        scanner, obs, data: dataManut.toISOString(), maintenanceId: maintenance.id
+      };
+      await aplicarMovimentoEstoque(part, -it.qtd, movBase);
+    }
+    await saveMaintenance(maintenance);
+    maintenances.push(maintenance);
+  }catch(e){
+    if(e && e.message === 'ESTOQUE_INSUFICIENTE'){
+      hint.textContent = 'Estoque insuficiente: outra pessoa já deu baixa em uma dessas peças. Tente novamente.';
+      showToast('Estoque insuficiente', true);
+    } else {
+      showToast('Erro ao salvar manutenção. Tente novamente.', true);
+    }
+    btn.disabled = false;
+    return;
+  }
+  btn.disabled = false;
+
+  manutItens = [];
+  renderManutItens();
+  document.getElementById('manutData').value = todayStr();
+  document.getElementById('manutObs').value = '';
+  document.getElementById('manutCusto').value = '';
+  document.getElementById('manutQtdCorretiva').value = 1;
+  showToast(tipo === 'preventiva' ? 'Manutenção preventiva registrada' : 'Manutenção corretiva registrada');
+  fillPecaSelects();
+  renderAll();
+}
+
 // ---------- chamados ----------
 async function salvarEmailConfig(){
   settings.email = {
@@ -1402,6 +1707,71 @@ async function avancarStatus(id){
     t.dataResolucao = new Date().toISOString(); // marca quando o chamado foi finalizado
   }
   await saveTicket(t);
+  renderAll();
+}
+
+// ---------- edição de chamado (inclusive data de abertura/finalização) ----------
+function atualizarVisibilidadeDataResolucaoEdicao(){
+  const status = document.getElementById('editChamadoStatus').value;
+  document.getElementById('editChamadoDataResolucaoWrap').style.display = status === 'resolvido' ? 'block' : 'none';
+}
+
+function abrirEditarChamado(id){
+  const t = tickets.find(x => x.id === id);
+  if(!t) return;
+  document.getElementById('editChamadoId').value = t.id;
+  document.getElementById('editChamadoScanner').value = t.scanner || '';
+  document.getElementById('editChamadoProblema').value = t.problema || '';
+  document.getElementById('editChamadoData').value = (t.data || '').slice(0, 10);
+  document.getElementById('editChamadoStatus').value = t.status || 'aberto';
+  document.getElementById('editChamadoDataResolucao').value = t.dataResolucao ? t.dataResolucao.slice(0, 10) : '';
+  document.getElementById('editChamadoErro').textContent = '';
+  atualizarVisibilidadeDataResolucaoEdicao();
+  document.getElementById('editChamadoModalOverlay').classList.add('show');
+}
+
+function fecharEditarChamado(){
+  document.getElementById('editChamadoModalOverlay').classList.remove('show');
+}
+
+async function salvarEdicaoChamado(){
+  const id = document.getElementById('editChamadoId').value;
+  const t = tickets.find(x => x.id === id);
+  if(!t) return;
+
+  const scanner = document.getElementById('editChamadoScanner').value.trim();
+  const problema = document.getElementById('editChamadoProblema').value.trim();
+  const dataInput = document.getElementById('editChamadoData').value;
+  const status = document.getElementById('editChamadoStatus').value;
+  const dataResolucaoInput = document.getElementById('editChamadoDataResolucao').value;
+  const erro = document.getElementById('editChamadoErro');
+  erro.textContent = '';
+
+  if(!scanner || !problema){ erro.textContent = 'Preencha scanner e descrição.'; return; }
+  if(!dataInput){ erro.textContent = 'Informe a data de abertura.'; return; }
+  if(status === 'resolvido' && !dataResolucaoInput){ erro.textContent = 'Informe a data de finalização.'; return; }
+
+  // Preserva o horário original, só troca o dia/mês/ano escolhido — evita
+  // que a data "pule" um dia por causa de fuso horário.
+  const horaOriginal = t.data ? new Date(t.data) : new Date();
+  const [y, mo, da] = dataInput.split('-').map(Number);
+  t.data = new Date(y, mo - 1, da, horaOriginal.getHours(), horaOriginal.getMinutes()).toISOString();
+
+  t.scanner = scanner;
+  t.problema = problema;
+  t.status = status;
+
+  if(status === 'resolvido'){
+    const horaResOriginal = t.dataResolucao ? new Date(t.dataResolucao) : new Date();
+    const [ry, rmo, rda] = dataResolucaoInput.split('-').map(Number);
+    t.dataResolucao = new Date(ry, rmo - 1, rda, horaResOriginal.getHours(), horaResOriginal.getMinutes()).toISOString();
+  } else {
+    delete t.dataResolucao;
+  }
+
+  await saveTicket(t);
+  fecharEditarChamado();
+  showToast('Chamado atualizado');
   renderAll();
 }
 
@@ -1590,6 +1960,16 @@ function renderEstoque(){
   list.innerHTML = `<table><thead><tr><th>Peça</th><th style="text-align:right">Qtd.</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
+function labelMovTipo(tipo){
+  switch(tipo){
+    case 'entrada': return 'Entrada';
+    case 'troca': return 'Troca';
+    case 'manutencao_preventiva': return 'Manut. Preventiva';
+    case 'manutencao_corretiva': return 'Manut. Corretiva';
+    default: return tipo;
+  }
+}
+
 function renderMovs(){
   const list = document.getElementById('movList');
   if(!movements.length){
@@ -1600,7 +1980,7 @@ function renderMovs(){
   list.innerHTML = recent.map(m => `
     <div class="list-item">
       <div class="top-row">
-        <span><span class="move-type ${m.tipo}">${m.tipo === 'entrada' ? 'Entrada' : 'Troca'}</span> ${escapeHtml(m.partNome)}</span>
+        <span><span class="move-type ${m.tipo === 'entrada' ? 'entrada' : 'troca'}">${labelMovTipo(m.tipo)}</span> ${escapeHtml(m.partNome)}</span>
         <span class="num" style="font-weight:700">${m.tipo === 'entrada' ? '+' : '-'}${m.qtd}</span>
       </div>
       <div class="meta">${fmtDate(m.data)}${m.scanner ? ' · ' + escapeHtml(m.scanner) : ''}${m.obs ? ' · ' + escapeHtml(m.obs) : ''}</div>
@@ -1637,6 +2017,7 @@ function renderChamados(){
       <div class="meta">Aberto em ${fmtDate(t.data)}${t.status === 'resolvido' && t.dataResolucao ? ' · Finalizado em ' + fmtDate(t.dataResolucao) : ''}</div>
       <div class="actions">
         ${t.status !== 'resolvido' ? `<button class="ghost" onclick="avancarStatus('${t.id}')">${t.status === 'aberto' ? 'Marcar em andamento' : 'Marcar resolvido'}</button>` : ''}
+        <button class="ghost" onclick="abrirEditarChamado('${t.id}')">Editar</button>
         <button class="ghost" onclick="excluirChamado('${t.id}')">Excluir</button>
       </div>
     </div>`).join('');
@@ -1660,10 +2041,88 @@ function renderTrocaList(){
     </div>`).join('');
 }
 
+function renderManutList(){
+  const list = document.getElementById('manutList');
+  if(!list) return;
+  if(!maintenances.length){
+    list.innerHTML = `<div class="empty"><span class="glyph">🔧</span>Nenhuma manutenção registrada.</div>`;
+    return;
+  }
+  const ordenadas = maintenances.slice().sort((a,b)=> new Date(b.data) - new Date(a.data));
+  list.innerHTML = ordenadas.map(m => {
+    const tipoLabel = m.tipo === 'preventiva' ? 'Preventiva' : 'Corretiva';
+    const itensTxt = m.itens && m.itens.length
+      ? m.itens.map(i => `${escapeHtml(i.partNome)} (-${i.qtd})`).join(', ')
+      : '';
+    return `
+    <div class="list-item">
+      <div class="top-row">
+        <span class="scanner">${escapeHtml(m.scanner || '(sem identificação)')}</span>
+        <span class="status-pill status-${m.tipo}">${tipoLabel}</span>
+      </div>
+      ${fmtScannerInfoChamado(m.scannerInfo)}
+      ${itensTxt ? `<div class="problem">${itensTxt}</div>` : ''}
+      ${m.custo != null ? `<div class="meta">Custo: R$ ${m.custo.toLocaleString('pt-BR', {minimumFractionDigits:2})}</div>` : ''}
+      ${m.obs ? `<div class="meta">${escapeHtml(m.obs)}</div>` : ''}
+      <div class="meta">${fmtDate(m.data)}</div>
+      <div class="actions">
+        <button class="ghost" onclick="imprimirManutencao('${m.id}')">🖨 Imprimir</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Monta e exibe o relatório de UMA manutenção específica, trocando
+// temporariamente para a "view" dedicada de impressão (assim só ela
+// aparece na folha, igual ao mecanismo já usado no relatório geral).
+function imprimirManutencao(id){
+  const m = maintenances.find(x => x.id === id);
+  if(!m) return;
+
+  const tipoLabel = m.tipo === 'preventiva' ? 'Preventiva' : 'Corretiva';
+  document.getElementById('manutPrintTipoTag').textContent = tipoLabel;
+  document.getElementById('manutPrintMeta').textContent =
+    `Scanner: ${m.scanner || '(sem identificação)'}  ·  Data: ${fmtDate(m.data)}  ·  Emitido em: ${fmtDate(new Date().toISOString())}`;
+
+  const scannerInfoHtml = fmtScannerInfoChamado(m.scannerInfo);
+  document.getElementById('manutPrintScannerInfo').innerHTML = scannerInfoHtml
+    || `<div class="hint">Sem dados adicionais cadastrados para este scanner.</div>`;
+
+  if(m.itens && m.itens.length){
+    const linhas = m.itens.map(i => `<tr><td>${escapeHtml(i.partNome)}</td><td class="num">${i.qtd}</td></tr>`).join('');
+    document.getElementById('manutPrintItens').innerHTML =
+      `<table><thead><tr><th>Peça</th><th style="text-align:right">Qtd.</th></tr></thead><tbody>${linhas}</tbody></table>`;
+  } else {
+    document.getElementById('manutPrintItens').innerHTML = `<div class="hint">Nenhum item de estoque vinculado a esta manutenção.</div>`;
+  }
+
+  document.getElementById('manutPrintCusto').innerHTML = m.custo != null
+    ? `<div class="hint" style="margin-top:12px;font-size:13px">Custo: <strong style="color:var(--text)">R$ ${m.custo.toLocaleString('pt-BR', {minimumFractionDigits:2})}</strong></div>`
+    : '';
+
+  document.getElementById('manutPrintObs').innerHTML = m.obs
+    ? `<h2 style="margin-top:16px">Observação</h2><div class="problem">${escapeHtml(m.obs)}</div>`
+    : '';
+
+  const viewAnterior = document.querySelector('.view.active');
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-manut-print').classList.add('active');
+
+  const restaurarView = () => {
+    document.getElementById('view-manut-print').classList.remove('active');
+    if(viewAnterior) viewAnterior.classList.add('active');
+    window.removeEventListener('afterprint', restaurarView);
+  };
+  window.addEventListener('afterprint', restaurarView);
+
+  window.print();
+}
+
 function renderAll(){
   renderEstoque();
   renderMovs();
   renderTrocaList();
+  renderManutList();
   renderChamados();
   renderScanners();
   fillPecaSelects();
@@ -1800,6 +2259,104 @@ function gerarRelatorio(){
         </div>
         <div class="meta">${fmtDate(m.data)}${m.scanner ? ' · ' + escapeHtml(m.scanner) + fmtScannerVinculo(m.scanner) : ''}${m.contadorImagens != null ? ' · Contador: ' + m.contadorImagens.toLocaleString('pt-BR') : ''}${m.obs ? ' · ' + escapeHtml(m.obs) : ''}</div>
       </div>`).join('')}
+  `;
+}
+
+// ---------- relatório de manutenções ----------
+function fillRelManutScannerSelect(){
+  const nomes = [...new Set(maintenances.filter(m => m.scanner).map(m => m.scanner))].sort();
+  const sel = document.getElementById('relManutScanner');
+  const opts = ['<option value="">Todos os scanners</option>'].concat(
+    nomes.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`)
+  );
+  sel.innerHTML = opts.join('');
+}
+
+function fillRelManutContratoSelect(){
+  const contratosScanners = scanners.map(s => s.contrato).filter(Boolean);
+  const contratosManut = maintenances.map(m => m.scannerInfo && m.scannerInfo.contrato).filter(Boolean);
+  const contratos = [...new Set([...contratosScanners, ...contratosManut])].sort();
+  const sel = document.getElementById('relManutContrato');
+  const opts = ['<option value="">Todos os contratos</option>'].concat(
+    contratos.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`)
+  );
+  sel.innerHTML = opts.join('');
+}
+
+function gerarRelatorioManutencao(){
+  const tipoFiltro = document.getElementById('relManutTipo').value;
+  const scannerFiltro = document.getElementById('relManutScanner').value;
+  const contratoFiltro = document.getElementById('relManutContrato').value;
+  const periodo = document.getElementById('relManutPeriodo').value;
+  const refDateStr = document.getElementById('relManutData').value || todayStr();
+  const { start, end } = getPeriodoRange(periodo, refDateStr);
+
+  const registros = maintenances.filter(m => {
+    const d = new Date(m.data);
+    if(d < start || d > end) return false;
+    if(tipoFiltro && m.tipo !== tipoFiltro) return false;
+    if(scannerFiltro && m.scanner !== scannerFiltro) return false;
+    if(contratoFiltro && (!m.scannerInfo || m.scannerInfo.contrato !== contratoFiltro)) return false;
+    return true;
+  }).sort((a,b) => new Date(b.data) - new Date(a.data));
+
+  document.getElementById('relManutPeriodoTag').textContent = fmtPeriodoLabel(periodo, start, end);
+  document.getElementById('relManutResultCard').style.display = 'block';
+  let scannerLabel = scannerFiltro ? scannerFiltro : 'Todos os scanners';
+  const tipoLabel = tipoFiltro ? (tipoFiltro === 'preventiva' ? 'Preventiva' : 'Corretiva') : 'Todas';
+  const contratoLabel = contratoFiltro ? contratoFiltro : 'Todos os contratos';
+  document.getElementById('relManutPrintMeta').textContent =
+    `Tipo: ${tipoLabel}  ·  Scanner: ${scannerLabel}  ·  Contrato: ${contratoLabel}  ·  Período: ${fmtPeriodoLabel(periodo, start, end)}  ·  Emitido em: ${fmtDate(new Date().toISOString())}`;
+
+  const resumo = document.getElementById('relManutResumo');
+  const detalhe = document.getElementById('relManutDetalhe');
+
+  if(!registros.length){
+    resumo.innerHTML = `<div class="empty"><span class="glyph">🔧</span>Nenhuma manutenção encontrada nesse período.</div>`;
+    detalhe.innerHTML = '';
+    return;
+  }
+
+  const preventivas = registros.filter(m => m.tipo === 'preventiva');
+  const corretivas = registros.filter(m => m.tipo === 'corretiva');
+  const custoTotal = corretivas.reduce((s,m) => s + (m.custo || 0), 0);
+
+  // resumo de consumíveis trocados nas preventivas
+  const porPeca = {};
+  preventivas.forEach(m => (m.itens || []).forEach(it => { porPeca[it.partNome] = (porPeca[it.partNome] || 0) + it.qtd; }));
+  const linhasPeca = Object.entries(porPeca).sort((a,b) => b[1]-a[1])
+    .map(([nome,qtd]) => `<tr><td>${escapeHtml(nome)}</td><td class="num"><span class="qty-badge low">${qtd}</span></td></tr>`).join('');
+
+  resumo.innerHTML = `
+    <div class="hint" style="margin-bottom:8px;font-size:13px">
+      Total de registros: <strong style="color:var(--text)">${registros.length}</strong>
+      · Preventivas: <strong style="color:var(--text)">${preventivas.length}</strong>
+      · Corretivas: <strong style="color:var(--text)">${corretivas.length}</strong>
+      · Custo total (corretivas): <strong style="color:var(--text)">R$ ${custoTotal.toLocaleString('pt-BR', {minimumFractionDigits:2})}</strong>
+    </div>
+    ${linhasPeca ? `<h2 style="margin-top:16px">Consumíveis trocados (preventivas)</h2>
+    <table><thead><tr><th>Peça</th><th style="text-align:right">Qtd. trocada</th></tr></thead><tbody>${linhasPeca}</tbody></table>` : ''}
+  `;
+
+  detalhe.innerHTML = `
+    <h2 style="margin-top:16px">Detalhamento</h2>
+    ${registros.map(m => {
+      const tipoLbl = m.tipo === 'preventiva' ? 'Preventiva' : 'Corretiva';
+      const itensTxt = m.itens && m.itens.length ? m.itens.map(i => `${escapeHtml(i.partNome)} (-${i.qtd})`).join(', ') : '';
+      return `
+      <div class="list-item">
+        <div class="top-row">
+          <span class="scanner">${escapeHtml(m.scanner || '(sem identificação)')}</span>
+          <span class="status-pill status-${m.tipo}">${tipoLbl}</span>
+        </div>
+        ${fmtScannerInfoChamado(m.scannerInfo)}
+        ${itensTxt ? `<div class="problem">${itensTxt}</div>` : ''}
+        <div class="meta">${fmtDate(m.data)}${m.custo != null ? ' · Custo: R$ ' + m.custo.toLocaleString('pt-BR', {minimumFractionDigits:2}) : ''}${m.obs ? ' · ' + escapeHtml(m.obs) : ''}</div>
+        <div class="actions no-print">
+          <button class="ghost" onclick="imprimirManutencao('${m.id}')">🖨 Imprimir</button>
+        </div>
+      </div>`;
+    }).join('')}
   `;
 }
 
