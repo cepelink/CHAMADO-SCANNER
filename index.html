@@ -279,6 +279,24 @@
   .scanner-row .nome{ font-weight:700; font-size:13.5px; }
   .scanner-row .details{ font-size:12px; color:var(--text-dim); margin-top:3px; font-family:var(--mono); }
   .scanner-row .actions{ display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; }
+  .scanner-row .badges{ margin-top:6px; display:flex; gap:6px; flex-wrap:wrap; }
+  .scanner-row.alerta{
+    background:rgba(185,28,28,.05); border-left:3px solid var(--red);
+    padding-left:10px; margin-left:-11px;
+  }
+  .scanner-resumo{
+    display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px;
+  }
+  .scanner-resumo .stat{
+    flex:1; min-width:110px; background:var(--surface-2); border:1px solid var(--border);
+    border-radius:8px; padding:10px 12px;
+  }
+  .scanner-resumo .stat .num{ font-family:var(--mono); font-weight:700; font-size:20px; text-align:left; }
+  .scanner-resumo .stat.producao .num{ color:var(--green); }
+  .scanner-resumo .stat.externo .num{ color:var(--red); }
+  .scanner-resumo .stat .lbl{ font-size:11px; color:var(--text-dim); margin-top:2px; }
+  .scanner-resumo .stat .sub{ font-size:11px; color:var(--text-dim); margin-top:6px; line-height:1.5; }
+  #scannerLocalExternoWrap{ margin-top:0; }
 
   .print-only{ display:none; }
 
@@ -449,6 +467,20 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
       </div>
       <label>Localização</label>
       <input id="scannerLocal" placeholder="Ex: Recepção - Térreo">
+      <label>Situação</label>
+      <select id="scannerSituacao" onchange="toggleScannerLocalExterno()">
+        <option value="producao">Em produção</option>
+        <option value="externo">Fora de operação — enviado para conserto externo</option>
+      </select>
+      <div id="scannerLocalExternoWrap" style="display:none">
+        <label>Enviado para</label>
+        <select id="scannerLocalExterno" onchange="toggleScannerLocalExternoOutro()">
+          <option value="Diagrama - BA">Diagrama - BA</option>
+          <option value="D2J - BA">D2J - BA</option>
+          <option value="outro">Outro...</option>
+        </select>
+        <input id="scannerLocalExternoOutro" placeholder="Especifique o local para onde o scanner foi" style="display:none;margin-top:8px">
+      </div>
       <div class="row">
         <div>
           <label>Contrato</label>
@@ -467,6 +499,7 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
     <div class="card">
       <h2>Scanners cadastrados <span class="tag" id="totalScannersTag">0</span></h2>
       <div class="hint" style="margin-bottom:8px">Cada scanner tem um QR Code próprio, com marca, modelo, número de série e tombo gravados dentro do código. Imprima e cole no equipamento — na hora da troca, o funcionário só bipa o código.</div>
+      <div class="scanner-resumo" id="scannerResumo"></div>
       <div id="scannersList"></div>
     </div>
   </section>
@@ -1124,15 +1157,48 @@ async function cadastrarPeca(){
 }
 
 // ---------- scanners (equipamentos) + QR Code ----------
+// Verifica se o scanner tem chamado em aberto/andamento vinculado a ele pelo nome
+function scannerTemChamadoAberto(nome){
+  if(!nome) return false;
+  return tickets.some(t => t.status !== 'resolvido' && (t.scanner || '').toLowerCase() === nome.toLowerCase());
+}
+
+function renderScannerResumo(){
+  const resumo = document.getElementById('scannerResumo');
+  if(!resumo) return;
+  const emProducao = scanners.filter(s => (s.situacao || 'producao') === 'producao');
+  const externos = scanners.filter(s => s.situacao === 'externo');
+  const porLocal = {};
+  externos.forEach(s => {
+    const loc = s.localExterno || '(local não informado)';
+    porLocal[loc] = (porLocal[loc] || 0) + 1;
+  });
+  const subExternos = Object.entries(porLocal).map(([loc,qtd]) => `${escapeHtml(loc)}: ${qtd}`).join('<br>');
+  resumo.innerHTML = `
+    <div class="stat producao">
+      <div class="num">${emProducao.length}</div>
+      <div class="lbl">Em produção</div>
+    </div>
+    <div class="stat externo">
+      <div class="num">${externos.length}</div>
+      <div class="lbl">Fora de operação</div>
+      ${subExternos ? `<div class="sub">${subExternos}</div>` : ''}
+    </div>`;
+}
+
 function renderScanners(){
   const list = document.getElementById('scannersList');
   document.getElementById('totalScannersTag').textContent = scanners.length;
+  renderScannerResumo();
   if(!scanners.length){
     list.innerHTML = `<div class="empty"><span class="glyph">▢</span>Nenhum scanner cadastrado ainda.</div>`;
     return;
   }
-  list.innerHTML = scanners.slice().sort((a,b) => a.nome.localeCompare(b.nome)).map(s => `
-    <div class="scanner-row">
+  list.innerHTML = scanners.slice().sort((a,b) => a.nome.localeCompare(b.nome)).map(s => {
+    const temChamado = scannerTemChamadoAberto(s.nome);
+    const foraDeOperacao = s.situacao === 'externo';
+    return `
+    <div class="scanner-row${(temChamado || foraDeOperacao) ? ' alerta' : ''}">
       <div class="nome">${escapeHtml(s.nome)}</div>
       <div class="details">
         ${s.marca ? escapeHtml(s.marca) + ' ' : ''}${s.modelo ? escapeHtml(s.modelo) : (s.marca ? '' : '—')}
@@ -1141,14 +1207,31 @@ function renderScanners(){
         ${s.localizacao ? ' · ' + escapeHtml(s.localizacao) : ''}
         ${s.contrato ? ' · Contrato ' + escapeHtml(s.contrato) : ''}
         ${s.garantia ? ' · Garantia até ' + fmtDataSimples(s.garantia) : ''}
-        ${s.garantia && garantiaVencida(s.garantia) ? ' <span class="status-pill status-aberto">Garantia vencida</span>' : ''}
+      </div>
+      <div class="badges">
+        ${s.garantia && garantiaVencida(s.garantia) ? '<span class="status-pill status-aberto">Garantia vencida</span>' : ''}
+        ${temChamado ? '<span class="status-pill status-aberto">Chamado aberto</span>' : ''}
+        ${foraDeOperacao ? `<span class="status-pill status-aberto">Fora de operação${s.localExterno ? ' — ' + escapeHtml(s.localExterno) : ''}</span>` : '<span class="status-pill status-resolvido">Em produção</span>'}
       </div>
       <div class="actions">
         <button class="ghost" onclick="imprimirQrScanner('${s.id}')">🖨 Imprimir QR Code</button>
         <button class="ghost" onclick="editarScanner('${s.id}')">Editar</button>
         <button class="ghost" onclick="excluirScanner('${s.id}')">Excluir</button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+}
+
+// Mostra/esconde o seletor de "Enviado para" conforme a situação escolhida
+function toggleScannerLocalExterno(){
+  const situacao = document.getElementById('scannerSituacao').value;
+  document.getElementById('scannerLocalExternoWrap').style.display = situacao === 'externo' ? 'block' : 'none';
+}
+
+// Mostra/esconde o campo de texto livre quando "Outro..." é selecionado
+function toggleScannerLocalExternoOutro(){
+  const val = document.getElementById('scannerLocalExterno').value;
+  document.getElementById('scannerLocalExternoOutro').style.display = val === 'outro' ? 'block' : 'none';
 }
 
 async function salvarScanner(){
@@ -1159,6 +1242,13 @@ async function salvarScanner(){
   const numeroSerie = document.getElementById('scannerNumSerie').value.trim();
   const patrimonio = document.getElementById('scannerPatrimonio').value.trim();
   const localizacao = document.getElementById('scannerLocal').value.trim();
+  const situacao = document.getElementById('scannerSituacao').value;
+  let localExterno = '';
+  if(situacao === 'externo'){
+    const selLocal = document.getElementById('scannerLocalExterno').value;
+    localExterno = selLocal === 'outro' ? document.getElementById('scannerLocalExternoOutro').value.trim() : selLocal;
+    if(!localExterno){ showToast('Informe para onde o scanner foi enviado', true); return; }
+  }
   const contrato = document.getElementById('scannerContrato').value.trim();
   const garantia = document.getElementById('scannerGarantia').value;
   const obs = document.getElementById('scannerObs').value.trim();
@@ -1173,11 +1263,12 @@ async function salvarScanner(){
       scannerSalvo.nome = nome; scannerSalvo.marca = marca; scannerSalvo.modelo = modelo;
       scannerSalvo.numeroSerie = numeroSerie;
       scannerSalvo.patrimonio = patrimonio; scannerSalvo.localizacao = localizacao;
+      scannerSalvo.situacao = situacao; scannerSalvo.localExterno = localExterno;
       scannerSalvo.contrato = contrato; scannerSalvo.garantia = garantia; scannerSalvo.obs = obs;
     }
     showToast('Scanner atualizado');
   } else {
-    scannerSalvo = { id: uid(), nome, marca, modelo, numeroSerie, patrimonio, localizacao, contrato, garantia, obs };
+    scannerSalvo = { id: uid(), nome, marca, modelo, numeroSerie, patrimonio, localizacao, situacao, localExterno, contrato, garantia, obs };
     scanners.push(scannerSalvo);
     showToast('Scanner cadastrado');
   }
@@ -1196,6 +1287,19 @@ function editarScanner(id){
   document.getElementById('scannerNumSerie').value = s.numeroSerie || '';
   document.getElementById('scannerPatrimonio').value = s.patrimonio || '';
   document.getElementById('scannerLocal').value = s.localizacao || '';
+  document.getElementById('scannerSituacao').value = s.situacao || 'producao';
+  toggleScannerLocalExterno();
+  if(s.situacao === 'externo'){
+    const opcoesPadrao = ['Diagrama - BA', 'D2J - BA'];
+    if(opcoesPadrao.includes(s.localExterno)){
+      document.getElementById('scannerLocalExterno').value = s.localExterno;
+      document.getElementById('scannerLocalExternoOutro').value = '';
+    } else {
+      document.getElementById('scannerLocalExterno').value = 'outro';
+      document.getElementById('scannerLocalExternoOutro').value = s.localExterno || '';
+    }
+    toggleScannerLocalExternoOutro();
+  }
   document.getElementById('scannerContrato').value = s.contrato || '';
   document.getElementById('scannerGarantia').value = s.garantia || '';
   document.getElementById('scannerObs').value = s.obs || '';
@@ -1212,6 +1316,11 @@ function cancelarEdicaoScanner(){
   document.getElementById('scannerNumSerie').value = '';
   document.getElementById('scannerPatrimonio').value = '';
   document.getElementById('scannerLocal').value = '';
+  document.getElementById('scannerSituacao').value = 'producao';
+  document.getElementById('scannerLocalExterno').value = 'Diagrama - BA';
+  document.getElementById('scannerLocalExternoOutro').value = '';
+  toggleScannerLocalExterno();
+  toggleScannerLocalExternoOutro();
   document.getElementById('scannerContrato').value = '';
   document.getElementById('scannerGarantia').value = '';
   document.getElementById('scannerObs').value = '';
