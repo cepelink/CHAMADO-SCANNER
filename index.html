@@ -466,12 +466,17 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
         </div>
       </div>
       <label>Localização</label>
-      <input id="scannerLocal" placeholder="Ex: Recepção - Térreo">
+      <input id="scannerLocal" placeholder="Ex: Recepção - Térreo" list="listaLocaisScanner" autocomplete="off">
+      <datalist id="listaLocaisScanner"></datalist>
       <label>Situação</label>
       <select id="scannerSituacao" onchange="toggleScannerLocalExterno()">
         <option value="producao">Em produção</option>
         <option value="externo">Fora de operação — enviado para conserto externo</option>
       </select>
+      <div id="scannerSituacaoNovoWrap" style="display:none;margin-top:8px">
+        <label>Novo status</label>
+        <input id="scannerSituacaoNovoInput" placeholder="Ex: Em manutenção interna, Desativado...">
+      </div>
       <div id="scannerLocalExternoWrap" style="display:none">
         <label>Enviado para</label>
         <select id="scannerLocalExterno" onchange="toggleScannerLocalExternoOutro()">
@@ -931,6 +936,10 @@ async function loadAppData(){
     settings = doc.exists ? doc.data() : {};
   }catch(e){ settings = {}; }
   if(!settings.email) settings.email = { destino:'', serviceId:'', templateId:'', publicKey:'' };
+  if(!Array.isArray(settings.locaisScanner)) settings.locaisScanner = [];
+  if(!Array.isArray(settings.situacoesCustom)) settings.situacoesCustom = [];
+  atualizarListaLocaisScanner();
+  renderOpcoesSituacaoScanner();
   document.getElementById('emailDestino').value = settings.email.destino || '';
   document.getElementById('emailServiceId').value = settings.email.serviceId || '';
   document.getElementById('emailTemplateId').value = settings.email.templateId || '';
@@ -1163,26 +1172,33 @@ function scannerTemChamadoAberto(nome){
   return tickets.some(t => t.status !== 'resolvido' && (t.scanner || '').toLowerCase() === nome.toLowerCase());
 }
 
+// Retorna o texto (label) de exibição da situação de um scanner
+function situacaoLabelScanner(s){
+  if(!s.situacao || s.situacao === 'producao') return 'Em produção';
+  if(s.situacao === 'externo') return 'Fora de operação' + (s.localExterno ? ' — ' + s.localExterno : '');
+  return s.situacaoCustom || 'Outro status';
+}
+
 function renderScannerResumo(){
   const resumo = document.getElementById('scannerResumo');
   if(!resumo) return;
   const emProducao = scanners.filter(s => (s.situacao || 'producao') === 'producao');
-  const externos = scanners.filter(s => s.situacao === 'externo');
-  const porLocal = {};
-  externos.forEach(s => {
-    const loc = s.localExterno || '(local não informado)';
-    porLocal[loc] = (porLocal[loc] || 0) + 1;
+  const foraProducao = scanners.filter(s => (s.situacao || 'producao') !== 'producao');
+  const porSituacao = {};
+  foraProducao.forEach(s => {
+    const chave = situacaoLabelScanner(s);
+    porSituacao[chave] = (porSituacao[chave] || 0) + 1;
   });
-  const subExternos = Object.entries(porLocal).map(([loc,qtd]) => `${escapeHtml(loc)}: ${qtd}`).join('<br>');
+  const subFora = Object.entries(porSituacao).map(([lbl,qtd]) => `${escapeHtml(lbl)}: ${qtd}`).join('<br>');
   resumo.innerHTML = `
     <div class="stat producao">
       <div class="num">${emProducao.length}</div>
       <div class="lbl">Em produção</div>
     </div>
     <div class="stat externo">
-      <div class="num">${externos.length}</div>
+      <div class="num">${foraProducao.length}</div>
       <div class="lbl">Fora de operação</div>
-      ${subExternos ? `<div class="sub">${subExternos}</div>` : ''}
+      ${subFora ? `<div class="sub">${subFora}</div>` : ''}
     </div>`;
 }
 
@@ -1196,7 +1212,7 @@ function renderScanners(){
   }
   list.innerHTML = scanners.slice().sort((a,b) => a.nome.localeCompare(b.nome)).map(s => {
     const temChamado = scannerTemChamadoAberto(s.nome);
-    const foraDeOperacao = s.situacao === 'externo';
+    const foraDeOperacao = (s.situacao || 'producao') !== 'producao';
     return `
     <div class="scanner-row${(temChamado || foraDeOperacao) ? ' alerta' : ''}">
       <div class="nome">${escapeHtml(s.nome)}</div>
@@ -1211,7 +1227,7 @@ function renderScanners(){
       <div class="badges">
         ${s.garantia && garantiaVencida(s.garantia) ? '<span class="status-pill status-aberto">Garantia vencida</span>' : ''}
         ${temChamado ? '<span class="status-pill status-aberto">Chamado aberto</span>' : ''}
-        ${foraDeOperacao ? `<span class="status-pill status-aberto">Fora de operação${s.localExterno ? ' — ' + escapeHtml(s.localExterno) : ''}</span>` : '<span class="status-pill status-resolvido">Em produção</span>'}
+        ${foraDeOperacao ? `<span class="status-pill status-aberto">${escapeHtml(situacaoLabelScanner(s))}</span>` : '<span class="status-pill status-resolvido">Em produção</span>'}
       </div>
       <div class="actions">
         <button class="ghost" onclick="imprimirQrScanner('${s.id}')">🖨 Imprimir QR Code</button>
@@ -1222,10 +1238,54 @@ function renderScanners(){
   }).join('');
 }
 
-// Mostra/esconde o seletor de "Enviado para" conforme a situação escolhida
+// Atualiza as sugestões (datalist) de localização com base nos locais já cadastrados
+function atualizarListaLocaisScanner(){
+  const dl = document.getElementById('listaLocaisScanner');
+  if(!dl) return;
+  dl.innerHTML = (settings.locaisScanner || []).slice().sort((a,b) => a.localeCompare(b))
+    .map(l => `<option value="${escapeHtml(l)}"></option>`).join('');
+}
+// Registra um novo local (se ainda não existir) na lista compartilhada
+async function registrarLocalScannerSeNovo(local){
+  if(!local) return;
+  const existe = (settings.locaisScanner || []).some(l => l.toLowerCase() === local.toLowerCase());
+  if(existe) return;
+  settings.locaisScanner.push(local);
+  atualizarListaLocaisScanner();
+  await saveSettings();
+}
+
+// Monta as opções do select de Situação: as duas fixas + os status já cadastrados + "cadastrar novo"
+function renderOpcoesSituacaoScanner(valorSelecionado){
+  const sel = document.getElementById('scannerSituacao');
+  if(!sel) return;
+  const atual = valorSelecionado !== undefined ? valorSelecionado : sel.value;
+  const customs = (settings.situacoesCustom || []).slice().sort((a,b) => a.localeCompare(b));
+  sel.innerHTML = `
+    <option value="producao">Em produção</option>
+    <option value="externo">Fora de operação — enviado para conserto externo</option>
+    ${customs.map(lbl => `<option value="custom:${escapeHtml(lbl)}">${escapeHtml(lbl)}</option>`).join('')}
+    <option value="novo_status">+ Cadastrar novo status...</option>
+  `;
+  if(atual) sel.value = atual;
+}
+// Registra um novo status personalizado (se ainda não existir) na lista compartilhada
+async function registrarSituacaoCustomSeNova(label){
+  if(!label) return;
+  const existe = (settings.situacoesCustom || []).some(l => l.toLowerCase() === label.toLowerCase());
+  if(!existe){
+    settings.situacoesCustom.push(label);
+    await saveSettings();
+  }
+  renderOpcoesSituacaoScanner('custom:' + label);
+}
+
+
+// Mostra/esconde o seletor de "Enviado para" ou o campo de novo status conforme a situação escolhida
 function toggleScannerLocalExterno(){
   const situacao = document.getElementById('scannerSituacao').value;
   document.getElementById('scannerLocalExternoWrap').style.display = situacao === 'externo' ? 'block' : 'none';
+  document.getElementById('scannerSituacaoNovoWrap').style.display = situacao === 'novo_status' ? 'block' : 'none';
 }
 
 // Mostra/esconde o campo de texto livre quando "Outro..." é selecionado
@@ -1242,12 +1302,21 @@ async function salvarScanner(){
   const numeroSerie = document.getElementById('scannerNumSerie').value.trim();
   const patrimonio = document.getElementById('scannerPatrimonio').value.trim();
   const localizacao = document.getElementById('scannerLocal').value.trim();
-  const situacao = document.getElementById('scannerSituacao').value;
+  const situacaoSel = document.getElementById('scannerSituacao').value;
+  let situacao = situacaoSel;
+  let situacaoCustom = '';
   let localExterno = '';
-  if(situacao === 'externo'){
+  if(situacaoSel === 'externo'){
     const selLocal = document.getElementById('scannerLocalExterno').value;
     localExterno = selLocal === 'outro' ? document.getElementById('scannerLocalExternoOutro').value.trim() : selLocal;
     if(!localExterno){ showToast('Informe para onde o scanner foi enviado', true); return; }
+  } else if(situacaoSel === 'novo_status'){
+    situacaoCustom = document.getElementById('scannerSituacaoNovoInput').value.trim();
+    if(!situacaoCustom){ showToast('Digite o nome do novo status', true); return; }
+    situacao = 'custom';
+  } else if(situacaoSel.startsWith('custom:')){
+    situacao = 'custom';
+    situacaoCustom = situacaoSel.slice(7);
   }
   const contrato = document.getElementById('scannerContrato').value.trim();
   const garantia = document.getElementById('scannerGarantia').value;
@@ -1263,15 +1332,19 @@ async function salvarScanner(){
       scannerSalvo.nome = nome; scannerSalvo.marca = marca; scannerSalvo.modelo = modelo;
       scannerSalvo.numeroSerie = numeroSerie;
       scannerSalvo.patrimonio = patrimonio; scannerSalvo.localizacao = localizacao;
-      scannerSalvo.situacao = situacao; scannerSalvo.localExterno = localExterno;
+      scannerSalvo.situacao = situacao; scannerSalvo.situacaoCustom = situacaoCustom; scannerSalvo.localExterno = localExterno;
       scannerSalvo.contrato = contrato; scannerSalvo.garantia = garantia; scannerSalvo.obs = obs;
     }
     showToast('Scanner atualizado');
   } else {
-    scannerSalvo = { id: uid(), nome, marca, modelo, numeroSerie, patrimonio, localizacao, situacao, localExterno, contrato, garantia, obs };
+    scannerSalvo = { id: uid(), nome, marca, modelo, numeroSerie, patrimonio, localizacao, situacao, situacaoCustom, localExterno, contrato, garantia, obs };
     scanners.push(scannerSalvo);
     showToast('Scanner cadastrado');
   }
+  if(situacaoSel === 'novo_status'){
+    await registrarSituacaoCustomSeNova(situacaoCustom);
+  }
+  await registrarLocalScannerSeNovo(localizacao);
   await saveScannerDoc(scannerSalvo);
   cancelarEdicaoScanner();
   renderScanners();
@@ -1287,7 +1360,13 @@ function editarScanner(id){
   document.getElementById('scannerNumSerie').value = s.numeroSerie || '';
   document.getElementById('scannerPatrimonio').value = s.patrimonio || '';
   document.getElementById('scannerLocal').value = s.localizacao || '';
-  document.getElementById('scannerSituacao').value = s.situacao || 'producao';
+  renderOpcoesSituacaoScanner();
+  if(s.situacao === 'custom' && s.situacaoCustom){
+    document.getElementById('scannerSituacao').value = 'custom:' + s.situacaoCustom;
+    document.getElementById('scannerSituacaoNovoInput').value = '';
+  } else {
+    document.getElementById('scannerSituacao').value = s.situacao || 'producao';
+  }
   toggleScannerLocalExterno();
   if(s.situacao === 'externo'){
     const opcoesPadrao = ['Diagrama - BA', 'D2J - BA'];
@@ -1316,7 +1395,8 @@ function cancelarEdicaoScanner(){
   document.getElementById('scannerNumSerie').value = '';
   document.getElementById('scannerPatrimonio').value = '';
   document.getElementById('scannerLocal').value = '';
-  document.getElementById('scannerSituacao').value = 'producao';
+  renderOpcoesSituacaoScanner('producao');
+  document.getElementById('scannerSituacaoNovoInput').value = '';
   document.getElementById('scannerLocalExterno').value = 'Diagrama - BA';
   document.getElementById('scannerLocalExternoOutro').value = '';
   toggleScannerLocalExterno();
