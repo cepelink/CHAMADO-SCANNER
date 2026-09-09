@@ -284,6 +284,28 @@
   }
   .dash-grid .card{ margin-bottom:0; }
 
+  .chart-bars{ display:flex; align-items:flex-end; gap:8px; height:170px; padding:0 2px 4px; }
+  .chart-bars .bar-col{ flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; height:100%; justify-content:flex-end; }
+  .chart-bars .bar{ width:100%; border-radius:4px 4px 0 0; background:var(--scan); min-height:2px; }
+  .chart-bars .bar-lbl{ font-size:10.5px; color:var(--text-dim); }
+
+  .chart-hbars{ display:flex; flex-direction:column; gap:12px; padding:4px 0; }
+  .chart-hbars .hbar-row .hbar-top{ display:flex; justify-content:space-between; font-size:12px; color:var(--text-dim); margin-bottom:4px; }
+  .chart-hbars .hbar-track{ background:var(--surface-2); border-radius:5px; height:14px; overflow:hidden; }
+  .chart-hbars .hbar-fill{ height:100%; background:var(--cyan); border-radius:5px; min-width:3%; }
+
+  .chart-grouped-legend{ display:flex; gap:14px; font-size:11.5px; color:var(--text-dim); margin-bottom:8px; }
+  .chart-grouped-legend .dot{ width:9px; height:9px; border-radius:2px; display:inline-block; margin-right:5px; vertical-align:-1px; }
+  .chart-grouped-bars{ display:flex; align-items:flex-end; gap:8px; height:150px; padding:0 2px 4px; }
+  .chart-grouped-bars .grp-col{ flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; height:100%; justify-content:flex-end; }
+  .chart-grouped-bars .grp-bars{ display:flex; gap:2px; align-items:flex-end; width:100%; height:120px; }
+  .chart-grouped-bars .grp-bars .bar{ flex:1; border-radius:3px 3px 0 0; min-height:2px; }
+  .chart-grouped-bars .bar-lbl{ font-size:10.5px; color:var(--text-dim); }
+
+  .chart-donut-wrap{ display:flex; align-items:center; gap:18px; flex-wrap:wrap; padding:4px 0; }
+  .chart-donut-wrap .donut-legend{ display:flex; flex-direction:column; gap:7px; font-size:12.5px; color:var(--text-dim); }
+  .chart-donut-wrap .donut-legend .dot{ width:9px; height:9px; border-radius:2px; display:inline-block; margin-right:6px; vertical-align:-1px; }
+
   /* ---------- scanners / qr code ---------- */
   .scanner-field-row{ display:flex; gap:8px; align-items:flex-end; }
   .scanner-field-row input{ flex:1; }
@@ -360,9 +382,6 @@
 <!-- QR Code: geração (qrcodejs) e leitura via câmera (html5-qrcode) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
-
-<!-- Gráficos do Dashboard -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 
 <!-- Leitura de planilhas Excel/CSV para importação de chamados -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -456,19 +475,20 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
     <div class="dash-grid">
       <div class="card">
         <h2>Chamados por status</h2>
-        <canvas id="chartChamadosStatus" height="220"></canvas>
+        <div class="chart-donut-wrap" id="chartChamadosStatus"></div>
       </div>
       <div class="card">
         <h2>Trocas de peças <span class="tag">últimos 6 meses</span></h2>
-        <canvas id="chartTrocasMes" height="220"></canvas>
+        <div class="chart-bars" id="chartTrocasMes"></div>
       </div>
       <div class="card">
         <h2>Peças mais trocadas</h2>
-        <canvas id="chartTopPecas" height="220"></canvas>
+        <div class="chart-hbars" id="chartTopPecas"></div>
       </div>
       <div class="card">
         <h2>Manutenções por tipo <span class="tag">últimos 6 meses</span></h2>
-        <canvas id="chartManutTipo" height="220"></canvas>
+        <div class="chart-grouped-legend" id="chartManutTipoLegend"></div>
+        <div class="chart-grouped-bars" id="chartManutTipo"></div>
       </div>
     </div>
 
@@ -2515,20 +2535,11 @@ function imprimirManutencao(id){
 }
 
 // ---------- dashboard ----------
-let dashCharts = {}; // instâncias Chart.js, guardadas para poder destruir/redesenhar
-
 // Paleta usada nos gráficos, puxada das mesmas cores do restante do app
 const DASH_CORES = {
   aberto: '#b91c1c', andamento: '#b45309', resolvido: '#15803d',
   preventiva: '#0e7490', corretiva: '#b91c1c', scan: '#006600', cyan: '#0e7490'
 };
-
-function dashCriarOuAtualizarChart(canvasId, config){
-  const canvas = document.getElementById(canvasId);
-  if(!canvas || typeof Chart === 'undefined') return;
-  if(dashCharts[canvasId]) dashCharts[canvasId].destroy();
-  dashCharts[canvasId] = new Chart(canvas.getContext('2d'), config);
-}
 
 // Gera rótulos "mmm/aa" e as chaves "AAAA-MM" dos últimos N meses (mais antigo primeiro)
 function dashUltimosMeses(n){
@@ -2541,6 +2552,88 @@ function dashUltimosMeses(n){
     out.push({ chave, rotulo });
   }
   return out;
+}
+
+// Gráfico de barras verticais simples (sem dependências externas)
+function dashRenderBarChart(containerId, labels, valores, cor){
+  const el = document.getElementById(containerId);
+  if(!el) return;
+  const max = Math.max(...valores, 1);
+  if(!valores.some(v => v > 0)){
+    el.innerHTML = `<div class="empty" style="padding:14px 0"><span class="glyph">▤</span>Sem dados no período.</div>`;
+    return;
+  }
+  el.innerHTML = labels.map((lbl,i) => `
+    <div class="bar-col">
+      <div class="bar" style="height:${Math.round((valores[i]/max)*100)}%;background:${cor}" title="${escapeHtml(lbl)}: ${valores[i]}"></div>
+      <div class="bar-lbl">${escapeHtml(lbl)}</div>
+    </div>`).join('');
+}
+
+// Gráfico de barras horizontais (ranking)
+function dashRenderHBarChart(containerId, itens){
+  const el = document.getElementById(containerId);
+  if(!el) return;
+  if(!itens.length){
+    el.innerHTML = `<div class="empty" style="padding:14px 0"><span class="glyph">▤</span>Nenhuma troca registrada ainda.</div>`;
+    return;
+  }
+  const max = Math.max(...itens.map(([,qtd]) => qtd), 1);
+  el.innerHTML = itens.map(([nome,qtd]) => `
+    <div class="hbar-row">
+      <div class="hbar-top"><span>${escapeHtml(nome)}</span><span>${qtd}</span></div>
+      <div class="hbar-track"><div class="hbar-fill" style="width:${Math.round((qtd/max)*100)}%"></div></div>
+    </div>`).join('');
+}
+
+// Gráfico de barras agrupadas (duas séries lado a lado por categoria)
+function dashRenderGroupedBarChart(containerId, labels, serieA, serieB, corA, corB){
+  const el = document.getElementById(containerId);
+  if(!el) return;
+  const max = Math.max(...serieA, ...serieB, 1);
+  if(!serieA.some(v=>v>0) && !serieB.some(v=>v>0)){
+    el.innerHTML = `<div class="empty" style="padding:14px 0"><span class="glyph">▤</span>Sem dados no período.</div>`;
+    return;
+  }
+  el.innerHTML = labels.map((lbl,i) => `
+    <div class="grp-col">
+      <div class="grp-bars">
+        <div class="bar" style="height:${Math.round((serieA[i]/max)*100)}%;background:${corA}" title="Preventiva: ${serieA[i]}"></div>
+        <div class="bar" style="height:${Math.round((serieB[i]/max)*100)}%;background:${corB}" title="Corretiva: ${serieB[i]}"></div>
+      </div>
+      <div class="bar-lbl">${escapeHtml(lbl)}</div>
+    </div>`).join('');
+}
+
+// Gráfico de rosca (donut) construído com SVG puro, sem bibliotecas externas
+function dashRenderDonut(containerId, segmentos){
+  const el = document.getElementById(containerId);
+  if(!el) return;
+  const total = segmentos.reduce((s,seg) => s + seg.valor, 0);
+  if(!total){
+    el.innerHTML = `<div class="empty" style="padding:14px 0"><span class="glyph">▤</span>Nenhum chamado registrado ainda.</div>`;
+    return;
+  }
+  const R = 60, C = 2 * Math.PI * R;
+  let acumulado = 0;
+  const circulos = segmentos.map(seg => {
+    const tamanho = (seg.valor / total) * C;
+    const offset = -acumulado;
+    acumulado += tamanho;
+    return `<circle cx="80" cy="80" r="${R}" fill="none" stroke="${seg.cor}" stroke-width="20"
+      stroke-dasharray="${tamanho.toFixed(2)} ${(C - tamanho).toFixed(2)}"
+      stroke-dashoffset="${offset.toFixed(2)}" transform="rotate(-90 80 80)"></circle>`;
+  }).join('');
+  const legenda = segmentos.map(seg => `
+    <span><span class="dot" style="background:${seg.cor}"></span>${escapeHtml(seg.rotulo)} — ${seg.valor}</span>`).join('');
+  el.innerHTML = `
+    <svg viewBox="0 0 160 160" width="140" height="140" role="img" aria-label="Gráfico de chamados por status">
+      <circle cx="80" cy="80" r="${R}" fill="none" stroke="var(--border)" stroke-width="20"></circle>
+      ${circulos}
+      <text x="80" y="76" text-anchor="middle" style="font-size:22px;font-weight:700;fill:var(--text)">${total}</text>
+      <text x="80" y="94" text-anchor="middle" style="font-size:10px;fill:var(--text-dim)">chamados</text>
+    </svg>
+    <div class="donut-legend">${legenda}</div>`;
 }
 
 function renderDashboard(){
@@ -2568,18 +2661,11 @@ function renderDashboard(){
   // ---- Gráfico: chamados por status ----
   const porStatus = { aberto:0, andamento:0, resolvido:0 };
   tickets.forEach(t => { if(porStatus[t.status] !== undefined) porStatus[t.status]++; });
-  dashCriarOuAtualizarChart('chartChamadosStatus', {
-    type: 'doughnut',
-    data: {
-      labels: ['Aberto', 'Em andamento', 'Resolvido'],
-      datasets: [{
-        data: [porStatus.aberto, porStatus.andamento, porStatus.resolvido],
-        backgroundColor: [DASH_CORES.aberto, DASH_CORES.andamento, DASH_CORES.resolvido],
-        borderWidth: 0
-      }]
-    },
-    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom', labels:{ boxWidth:12, font:{ size:11 } } } } }
-  });
+  dashRenderDonut('chartChamadosStatus', [
+    { rotulo:'Aberto', valor:porStatus.aberto, cor:DASH_CORES.aberto },
+    { rotulo:'Em andamento', valor:porStatus.andamento, cor:DASH_CORES.andamento },
+    { rotulo:'Resolvido', valor:porStatus.resolvido, cor:DASH_CORES.resolvido }
+  ]);
 
   // ---- Gráfico: trocas de peças por mês (últimos 6 meses) ----
   const meses6 = dashUltimosMeses(6);
@@ -2587,15 +2673,7 @@ function renderDashboard(){
     movements.filter(mv => mv.tipo === 'troca' && (mv.data || '').slice(0,7) === m.chave)
       .reduce((s,mv) => s + (mv.qtd || 0), 0)
   );
-  dashCriarOuAtualizarChart('chartTrocasMes', {
-    type: 'bar',
-    data: {
-      labels: meses6.map(m => m.rotulo),
-      datasets: [{ label:'Peças trocadas', data: trocasPorMes, backgroundColor: DASH_CORES.scan, borderRadius:4 }]
-    },
-    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } },
-      scales:{ y:{ beginAtZero:true, ticks:{ precision:0 } } } }
-  });
+  dashRenderBarChart('chartTrocasMes', meses6.map(m => m.rotulo), trocasPorMes, DASH_CORES.scan);
 
   // ---- Gráfico: peças mais trocadas (top 6, histórico completo) ----
   const porPeca = {};
@@ -2603,15 +2681,7 @@ function renderDashboard(){
     porPeca[mv.partNome] = (porPeca[mv.partNome] || 0) + (mv.qtd || 0);
   });
   const topPecas = Object.entries(porPeca).sort((a,b) => b[1]-a[1]).slice(0,6);
-  dashCriarOuAtualizarChart('chartTopPecas', {
-    type: 'bar',
-    data: {
-      labels: topPecas.map(([nome]) => nome),
-      datasets: [{ label:'Trocadas', data: topPecas.map(([,qtd]) => qtd), backgroundColor: DASH_CORES.cyan, borderRadius:4 }]
-    },
-    options: { indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } },
-      scales:{ x:{ beginAtZero:true, ticks:{ precision:0 } } } }
-  });
+  dashRenderHBarChart('chartTopPecas', topPecas);
 
   // ---- Gráfico: manutenções por tipo (últimos 6 meses) ----
   const preventivasPorMes = meses6.map(m =>
@@ -2620,18 +2690,10 @@ function renderDashboard(){
   const corretivasPorMes = meses6.map(m =>
     maintenances.filter(mm => mm.tipo === 'corretiva' && (mm.data || '').slice(0,7) === m.chave).length
   );
-  dashCriarOuAtualizarChart('chartManutTipo', {
-    type: 'bar',
-    data: {
-      labels: meses6.map(m => m.rotulo),
-      datasets: [
-        { label:'Preventiva', data: preventivasPorMes, backgroundColor: DASH_CORES.preventiva, borderRadius:4 },
-        { label:'Corretiva', data: corretivasPorMes, backgroundColor: DASH_CORES.corretiva, borderRadius:4 }
-      ]
-    },
-    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom', labels:{ boxWidth:12, font:{ size:11 } } } },
-      scales:{ y:{ beginAtZero:true, ticks:{ precision:0 } } } }
-  });
+  document.getElementById('chartManutTipoLegend').innerHTML = `
+    <span><span class="dot" style="background:${DASH_CORES.preventiva}"></span>Preventiva</span>
+    <span><span class="dot" style="background:${DASH_CORES.corretiva}"></span>Corretiva</span>`;
+  dashRenderGroupedBarChart('chartManutTipo', meses6.map(m => m.rotulo), preventivasPorMes, corretivasPorMes, DASH_CORES.preventiva, DASH_CORES.corretiva);
 
   // ---- Lista: scanners que precisam de atenção ----
   document.getElementById('dashScannersAlertaTag').textContent = scannersAlerta.length;
