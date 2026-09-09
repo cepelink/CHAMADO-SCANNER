@@ -398,7 +398,7 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
   <button data-view="scanners" data-roles="administrador">Scanners</button>
   <button data-view="entrada" data-roles="administrador">Entrada</button>
   <button data-view="troca" data-roles="administrador,operador">Troca</button>
-  <button data-view="manutencao" data-roles="administrador,operador,tecnico">Manutenção</button>
+  <button data-view="manutencao" data-roles="administrador,tecnico">Manutenção</button>
   <button data-view="chamados" data-roles="administrador,operador,tecnico">Chamados</button>
   <button data-view="relatorio" data-roles="administrador">Relatório</button>
   <button data-view="usuarios" data-roles="administrador">Usuários</button>
@@ -540,6 +540,9 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
         <input id="trocaScanner" placeholder="Ex: Scanner 04 - Recepção" oninput="limparScannerInfo('trocaScannerInfo')">
         <button class="ghost" type="button" onclick="abrirQrScanner('troca')">📷 Bipar QR</button>
       </div>
+      <select id="trocaScannerManualSelect" style="margin-top:8px" onchange="selecionarScannerManual('troca', this.value); this.value='';">
+        <option value="">— ou selecione um scanner cadastrado —</option>
+      </select>
       <div class="card" id="trocaScannerInfo" style="display:none;margin-top:10px;background:var(--surface-2)"></div>
       <label>Contador de imagens do scanner</label>
       <input id="trocaContador" type="number" min="0" placeholder="Ex: 152340">
@@ -572,6 +575,9 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
         <input id="manutScanner" placeholder="Ex: Scanner 04 - Recepção" oninput="limparScannerInfo('manutScannerInfo')">
         <button class="ghost" type="button" onclick="abrirQrScanner('manutencao')">📷 Bipar QR</button>
       </div>
+      <select id="manutScannerManualSelect" style="margin-top:8px" onchange="selecionarScannerManual('manutencao', this.value); this.value='';">
+        <option value="">— ou selecione um scanner cadastrado —</option>
+      </select>
       <div class="card" id="manutScannerInfo" style="display:none;margin-top:10px;background:var(--surface-2)"></div>
 
       <div id="manutPreventivaBox">
@@ -631,6 +637,9 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
         <input id="chScanner" placeholder="Ex: Scanner 04 - Recepção" oninput="limparScannerInfo('chScannerInfo')">
         <button class="ghost" type="button" onclick="abrirQrScanner('chamado')">📷 Bipar QR</button>
       </div>
+      <select id="chScannerManualSelect" style="margin-top:8px" onchange="selecionarScannerManual('chamado', this.value); this.value='';">
+        <option value="">— ou selecione um scanner cadastrado —</option>
+      </select>
       <div class="card" id="chScannerInfo" style="display:none;margin-top:10px;background:var(--surface-2)"></div>
       <label>Descrição do problema</label>
       <textarea id="chProblema" placeholder="Descreva o que está acontecendo..."></textarea>
@@ -830,6 +839,9 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
       <input id="editTrocaScanner" placeholder="Ex: Scanner 04 - Recepção" oninput="limparScannerInfo('editTrocaScannerInfo')">
       <button class="ghost" type="button" onclick="abrirQrScanner('trocaEdit')">📷 Bipar QR</button>
     </div>
+    <select id="editTrocaScannerManualSelect" style="margin-top:8px" onchange="selecionarScannerManual('trocaEdit', this.value); this.value='';">
+      <option value="">— ou selecione um scanner cadastrado —</option>
+    </select>
     <div class="card" id="editTrocaScannerInfo" style="display:none;margin-top:10px;background:var(--surface-2)"></div>
     <label>Contador de imagens do scanner</label>
     <input id="editTrocaContador" type="number" min="0" placeholder="Ex: 152340">
@@ -1206,6 +1218,7 @@ function renderScanners(){
   const list = document.getElementById('scannersList');
   document.getElementById('totalScannersTag').textContent = scanners.length;
   renderScannerResumo();
+  fillManualScannerSelects();
   if(!scanners.length){
     list.innerHTML = `<div class="empty"><span class="glyph">▢</span>Nenhum scanner cadastrado ainda.</div>`;
     return;
@@ -1535,25 +1548,57 @@ function onQrScanSuccess(decodedText){
     return;
   }
 
-  const alvoMap = {
-    chamado: { campo: 'chScanner', box: 'chScannerInfo' },
-    troca: { campo: 'trocaScanner', box: 'trocaScannerInfo' },
-    manutencao: { campo: 'manutScanner', box: 'manutScannerInfo' },
-    trocaEdit: { campo: 'editTrocaScanner', box: 'editTrocaScannerInfo' }
-  };
-  const alvo = alvoMap[qrScannerAlvo];
+  aplicarScannerAoAlvo(qrScannerAlvo, s);
+  showToast(`Scanner identificado: ${s.nome}`);
+  fecharQrScanner();
+}
+
+// Mapa dos campos/caixas de informação para cada tela que identifica um scanner
+// (usado tanto pela leitura de QR Code quanto pela seleção manual)
+const scannerAlvoMap = {
+  chamado: { campo: 'chScanner', box: 'chScannerInfo' },
+  troca: { campo: 'trocaScanner', box: 'trocaScannerInfo' },
+  manutencao: { campo: 'manutScanner', box: 'manutScannerInfo' },
+  trocaEdit: { campo: 'editTrocaScanner', box: 'editTrocaScannerInfo' }
+};
+
+// Aplica um scanner (vindo do QR Code ou escolhido manualmente) ao campo/caixa
+// de informações correspondente na tela indicada por alvoKey.
+function aplicarScannerAoAlvo(alvoKey, s){
+  const alvo = scannerAlvoMap[alvoKey];
+  if(!alvo) return;
   document.getElementById(alvo.campo).value = s.nome;
-  if(qrScannerAlvo === 'chamado'){
+  if(alvoKey === 'chamado'){
     document.getElementById('chScannerId').value = s.id || '';
     chScannerSnapshot = s;
   }
-  if(qrScannerAlvo === 'manutencao'){
+  if(alvoKey === 'manutencao'){
     document.getElementById('manutScannerId').value = s.id || '';
     manutScannerSnapshot = s;
   }
   exibirScannerInfo(alvo.box, s);
-  showToast(`Scanner identificado: ${s.nome}`);
-  fecharQrScanner();
+}
+
+// Permite escolher o scanner manualmente (select) em vez de bipar o QR Code
+function selecionarScannerManual(alvoKey, scannerId){
+  if(!scannerId) return;
+  const s = scanners.find(x => x.id === scannerId);
+  if(!s) return;
+  aplicarScannerAoAlvo(alvoKey, s);
+  showToast(`Scanner selecionado: ${s.nome}`);
+}
+
+// Preenche as opções dos selects de seleção manual de scanner com a lista atual
+function fillManualScannerSelects(){
+  const listaOrdenada = scanners.slice().sort((a,b) => a.nome.localeCompare(b.nome));
+  const opts = listaOrdenada.map(s =>
+    `<option value="${escapeHtml(s.id)}">${escapeHtml(s.nome)}${s.patrimonio ? ' — Tombo ' + escapeHtml(s.patrimonio) : ''}</option>`
+  ).join('');
+  ['trocaScannerManualSelect','manutScannerManualSelect','chScannerManualSelect','editTrocaScannerManualSelect'].forEach(id => {
+    const sel = document.getElementById(id);
+    if(!sel) return;
+    sel.innerHTML = `<option value="">— ou selecione um scanner cadastrado —</option>${opts}`;
+  });
 }
 
 function exibirScannerInfo(boxId, s){
