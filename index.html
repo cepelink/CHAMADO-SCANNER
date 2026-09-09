@@ -263,6 +263,27 @@
   .modal-actions{ display:flex; gap:8px; margin-top:6px; }
   .modal-actions button.primary{ margin-top:0; }
 
+  /* ---------- dashboard ---------- */
+  .dash-kpis{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+    gap:12px; margin-bottom:14px;
+  }
+  .kpi-card{
+    background:var(--surface); border:1px solid var(--border); border-radius:10px;
+    padding:16px; box-shadow:0 1px 3px rgba(16,24,22,.05); border-left:4px solid var(--border);
+  }
+  .kpi-num{ font-family:var(--mono); font-size:26px; font-weight:700; color:var(--text); line-height:1.1; }
+  .kpi-lbl{ font-size:11.5px; color:var(--text-dim); margin-top:5px; font-weight:600; letter-spacing:.02em; }
+  .kpi-red{ border-left-color:var(--red); }
+  .kpi-amber{ border-left-color:var(--amber); }
+  .kpi-cyan{ border-left-color:var(--cyan); }
+  .kpi-green{ border-left-color:var(--green); }
+  .dash-grid{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+    gap:14px; margin-bottom:14px;
+  }
+  .dash-grid .card{ margin-bottom:0; }
+
   /* ---------- scanners / qr code ---------- */
   .scanner-field-row{ display:flex; gap:8px; align-items:flex-end; }
   .scanner-field-row input{ flex:1; }
@@ -340,6 +361,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
 
+<!-- Gráficos do Dashboard -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+
 <!-- Leitura de planilhas Excel/CSV para importação de chamados -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
@@ -393,7 +417,8 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
 </header>
 
 <nav id="tabs">
-  <button data-view="estoque" data-roles="administrador" class="active">Estoque</button>
+  <button data-view="dashboard" data-roles="administrador" class="active">Dashboard</button>
+  <button data-view="estoque" data-roles="administrador">Estoque</button>
   <button data-view="cadastro" data-roles="administrador">Cadastrar</button>
   <button data-view="scanners" data-roles="administrador">Scanners</button>
   <button data-view="entrada" data-roles="administrador">Entrada</button>
@@ -407,7 +432,63 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
 <main>
 
   <!-- ESTOQUE -->
-  <section class="view active" id="view-estoque">
+  <!-- DASHBOARD -->
+  <section class="view active" id="view-dashboard">
+    <div class="dash-kpis">
+      <div class="kpi-card kpi-red">
+        <div class="kpi-num" id="kpiChamadosAbertos">0</div>
+        <div class="kpi-lbl">Chamados em aberto</div>
+      </div>
+      <div class="kpi-card kpi-amber">
+        <div class="kpi-num" id="kpiScannersAlerta">0</div>
+        <div class="kpi-lbl">Scanners com alerta</div>
+      </div>
+      <div class="kpi-card kpi-cyan">
+        <div class="kpi-num" id="kpiEstoqueBaixo">0</div>
+        <div class="kpi-lbl">Peças com estoque baixo</div>
+      </div>
+      <div class="kpi-card kpi-green">
+        <div class="kpi-num" id="kpiCustoCorretiva">R$ 0,00</div>
+        <div class="kpi-lbl">Custo corretivo (30 dias)</div>
+      </div>
+    </div>
+
+    <div class="dash-grid">
+      <div class="card">
+        <h2>Chamados por status</h2>
+        <canvas id="chartChamadosStatus" height="220"></canvas>
+      </div>
+      <div class="card">
+        <h2>Trocas de peças <span class="tag">últimos 6 meses</span></h2>
+        <canvas id="chartTrocasMes" height="220"></canvas>
+      </div>
+      <div class="card">
+        <h2>Peças mais trocadas</h2>
+        <canvas id="chartTopPecas" height="220"></canvas>
+      </div>
+      <div class="card">
+        <h2>Manutenções por tipo <span class="tag">últimos 6 meses</span></h2>
+        <canvas id="chartManutTipo" height="220"></canvas>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Scanners que precisam de atenção <span class="tag" id="dashScannersAlertaTag">0</span></h2>
+      <div id="dashScannersAlertaList"></div>
+    </div>
+
+    <div class="card">
+      <h2>Peças com estoque baixo <span class="tag" id="dashEstoqueBaixoTag">0</span></h2>
+      <div id="dashEstoqueBaixoList"></div>
+    </div>
+
+    <div class="card">
+      <h2>Últimos chamados abertos <span class="tag" id="dashChamadosTag">0</span></h2>
+      <div id="dashChamadosList"></div>
+    </div>
+  </section>
+
+  <section class="view" id="view-estoque">
     <div class="card">
       <h2>Peças em estoque <span class="tag" id="totalPecasTag">0 itens</span></h2>
       <div id="estoqueList"></div>
@@ -1159,6 +1240,7 @@ document.getElementById('tabs').addEventListener('click', (e)=>{
     if(!document.getElementById('relManutData').value) document.getElementById('relManutData').value = todayStr();
   }
   if(btn.dataset.view === 'usuarios') renderUsers();
+  if(btn.dataset.view === 'dashboard') renderDashboard();
 });
 
 // ---------- cadastro ----------
@@ -2432,6 +2514,163 @@ function imprimirManutencao(id){
   window.print();
 }
 
+// ---------- dashboard ----------
+let dashCharts = {}; // instâncias Chart.js, guardadas para poder destruir/redesenhar
+
+// Paleta usada nos gráficos, puxada das mesmas cores do restante do app
+const DASH_CORES = {
+  aberto: '#b91c1c', andamento: '#b45309', resolvido: '#15803d',
+  preventiva: '#0e7490', corretiva: '#b91c1c', scan: '#006600', cyan: '#0e7490'
+};
+
+function dashCriarOuAtualizarChart(canvasId, config){
+  const canvas = document.getElementById(canvasId);
+  if(!canvas || typeof Chart === 'undefined') return;
+  if(dashCharts[canvasId]) dashCharts[canvasId].destroy();
+  dashCharts[canvasId] = new Chart(canvas.getContext('2d'), config);
+}
+
+// Gera rótulos "mmm/aa" e as chaves "AAAA-MM" dos últimos N meses (mais antigo primeiro)
+function dashUltimosMeses(n){
+  const out = [];
+  const agora = new Date();
+  for(let i = n - 1; i >= 0; i--){
+    const d = new Date(agora.getFullYear(), agora.getMonth() - i, 1);
+    const chave = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const rotulo = d.toLocaleDateString('pt-BR', { month:'short', year:'2-digit' }).replace('.', '');
+    out.push({ chave, rotulo });
+  }
+  return out;
+}
+
+function renderDashboard(){
+  if(!document.getElementById('view-dashboard')) return;
+
+  // ---- KPIs ----
+  const chamadosAbertos = tickets.filter(t => t.status !== 'resolvido');
+  document.getElementById('kpiChamadosAbertos').textContent = chamadosAbertos.length;
+
+  const scannersAlerta = scanners.filter(s =>
+    (s.situacao || 'producao') !== 'producao' || scannerTemChamadoAberto(s.nome)
+  );
+  document.getElementById('kpiScannersAlerta').textContent = scannersAlerta.length;
+
+  const pecasBaixo = parts.filter(p => p.qtd <= 2);
+  document.getElementById('kpiEstoqueBaixo').textContent = pecasBaixo.length;
+
+  const ha30Dias = new Date(); ha30Dias.setDate(ha30Dias.getDate() - 30);
+  const custoCorretiva30d = maintenances
+    .filter(m => m.tipo === 'corretiva' && new Date(m.data) >= ha30Dias)
+    .reduce((s,m) => s + (m.custo || 0), 0);
+  document.getElementById('kpiCustoCorretiva').textContent =
+    `R$ ${custoCorretiva30d.toLocaleString('pt-BR', {minimumFractionDigits:2})}`;
+
+  // ---- Gráfico: chamados por status ----
+  const porStatus = { aberto:0, andamento:0, resolvido:0 };
+  tickets.forEach(t => { if(porStatus[t.status] !== undefined) porStatus[t.status]++; });
+  dashCriarOuAtualizarChart('chartChamadosStatus', {
+    type: 'doughnut',
+    data: {
+      labels: ['Aberto', 'Em andamento', 'Resolvido'],
+      datasets: [{
+        data: [porStatus.aberto, porStatus.andamento, porStatus.resolvido],
+        backgroundColor: [DASH_CORES.aberto, DASH_CORES.andamento, DASH_CORES.resolvido],
+        borderWidth: 0
+      }]
+    },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom', labels:{ boxWidth:12, font:{ size:11 } } } } }
+  });
+
+  // ---- Gráfico: trocas de peças por mês (últimos 6 meses) ----
+  const meses6 = dashUltimosMeses(6);
+  const trocasPorMes = meses6.map(m =>
+    movements.filter(mv => mv.tipo === 'troca' && (mv.data || '').slice(0,7) === m.chave)
+      .reduce((s,mv) => s + (mv.qtd || 0), 0)
+  );
+  dashCriarOuAtualizarChart('chartTrocasMes', {
+    type: 'bar',
+    data: {
+      labels: meses6.map(m => m.rotulo),
+      datasets: [{ label:'Peças trocadas', data: trocasPorMes, backgroundColor: DASH_CORES.scan, borderRadius:4 }]
+    },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } },
+      scales:{ y:{ beginAtZero:true, ticks:{ precision:0 } } } }
+  });
+
+  // ---- Gráfico: peças mais trocadas (top 6, histórico completo) ----
+  const porPeca = {};
+  movements.filter(mv => mv.tipo === 'troca').forEach(mv => {
+    porPeca[mv.partNome] = (porPeca[mv.partNome] || 0) + (mv.qtd || 0);
+  });
+  const topPecas = Object.entries(porPeca).sort((a,b) => b[1]-a[1]).slice(0,6);
+  dashCriarOuAtualizarChart('chartTopPecas', {
+    type: 'bar',
+    data: {
+      labels: topPecas.map(([nome]) => nome),
+      datasets: [{ label:'Trocadas', data: topPecas.map(([,qtd]) => qtd), backgroundColor: DASH_CORES.cyan, borderRadius:4 }]
+    },
+    options: { indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } },
+      scales:{ x:{ beginAtZero:true, ticks:{ precision:0 } } } }
+  });
+
+  // ---- Gráfico: manutenções por tipo (últimos 6 meses) ----
+  const preventivasPorMes = meses6.map(m =>
+    maintenances.filter(mm => mm.tipo === 'preventiva' && (mm.data || '').slice(0,7) === m.chave).length
+  );
+  const corretivasPorMes = meses6.map(m =>
+    maintenances.filter(mm => mm.tipo === 'corretiva' && (mm.data || '').slice(0,7) === m.chave).length
+  );
+  dashCriarOuAtualizarChart('chartManutTipo', {
+    type: 'bar',
+    data: {
+      labels: meses6.map(m => m.rotulo),
+      datasets: [
+        { label:'Preventiva', data: preventivasPorMes, backgroundColor: DASH_CORES.preventiva, borderRadius:4 },
+        { label:'Corretiva', data: corretivasPorMes, backgroundColor: DASH_CORES.corretiva, borderRadius:4 }
+      ]
+    },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom', labels:{ boxWidth:12, font:{ size:11 } } } },
+      scales:{ y:{ beginAtZero:true, ticks:{ precision:0 } } } }
+  });
+
+  // ---- Lista: scanners que precisam de atenção ----
+  document.getElementById('dashScannersAlertaTag').textContent = scannersAlerta.length;
+  document.getElementById('dashScannersAlertaList').innerHTML = scannersAlerta.length
+    ? scannersAlerta.slice(0,8).map(s => `
+      <div class="list-item">
+        <div class="top-row">
+          <span class="scanner">${escapeHtml(s.nome)}</span>
+          <span class="status-pill status-aberto">${escapeHtml(situacaoLabelScanner(s))}</span>
+        </div>
+        ${s.localizacao ? `<div class="problem">${escapeHtml(s.localizacao)}</div>` : ''}
+      </div>`).join('')
+    : `<div class="empty"><span class="glyph">✓</span>Nenhum scanner com alerta no momento.</div>`;
+
+  // ---- Lista: peças com estoque baixo ----
+  document.getElementById('dashEstoqueBaixoTag').textContent = pecasBaixo.length;
+  document.getElementById('dashEstoqueBaixoList').innerHTML = pecasBaixo.length
+    ? `<table><thead><tr><th>Peça</th><th style="text-align:right">Qtd.</th></tr></thead><tbody>
+      ${pecasBaixo.slice().sort((a,b)=>a.qtd-b.qtd).map(p => `
+        <tr><td>${escapeHtml(p.nome)}</td><td class="num"><span class="qty-badge low">${p.qtd}</span></td></tr>
+      `).join('')}</tbody></table>`
+    : `<div class="empty"><span class="glyph">✓</span>Nenhuma peça com estoque baixo.</div>`;
+
+  // ---- Lista: últimos chamados abertos ----
+  const ultimosChamados = chamadosAbertos.slice().sort((a,b) => new Date(b.data) - new Date(a.data)).slice(0,6);
+  document.getElementById('dashChamadosTag').textContent = chamadosAbertos.length;
+  document.getElementById('dashChamadosList').innerHTML = ultimosChamados.length
+    ? ultimosChamados.map(t => `
+      <div class="list-item">
+        <div class="top-row">
+          <span class="scanner">${escapeHtml(t.scanner || '(sem identificação)')}</span>
+          <span class="status-pill status-${t.status}">${t.status === 'aberto' ? 'Aberto' : 'Em andamento'}</span>
+        </div>
+        <div class="problem">${escapeHtml(t.problema || '')}</div>
+        <div class="meta">${fmtDate(t.data)}</div>
+      </div>`).join('')
+    : `<div class="empty"><span class="glyph">✓</span>Nenhum chamado em aberto.</div>`;
+}
+
 function renderAll(){
   renderEstoque();
   renderMovs();
@@ -2440,6 +2679,7 @@ function renderAll(){
   renderChamados();
   renderScanners();
   fillPecaSelects();
+  renderDashboard();
 }
 
 // ---------- relatório ----------
