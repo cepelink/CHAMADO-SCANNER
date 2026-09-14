@@ -2643,7 +2643,7 @@ function dashRenderDonut(containerId, segmentos){
 
 // Agrupa os scanners pelo campo "localizacao" (Cone, CEPE-Sede ou qualquer
 // outro local cadastrado no formulário do scanner) e mostra quantos estão
-// funcionando (em produção) e o total em cada local.
+// funcionando, quantos fora de operação e o total em cada local.
 function renderScannersPorLocal(){
   const container = document.getElementById('dashScannersPorLocalList');
   if(!container) return;
@@ -2651,22 +2651,27 @@ function renderScannersPorLocal(){
   const porLocal = {};
   scanners.forEach(s => {
     const local = (s.localizacao || '').trim() || 'Sem local definido';
-    if(!porLocal[local]) porLocal[local] = { funcionando:0, total:0 };
+    if(!porLocal[local]) porLocal[local] = { funcionando:0, foraDeOperacao:0, total:0 };
     porLocal[local].total++;
     if((s.situacao || 'producao') === 'producao') porLocal[local].funcionando++;
+    else porLocal[local].foraDeOperacao++;
   });
 
   const locais = Object.entries(porLocal).sort((a,b) => a[0].localeCompare(b[0], 'pt-BR'));
   document.getElementById('dashLocaisTag').textContent = locais.length;
 
   container.innerHTML = locais.length
-    ? `<table><thead><tr><th>Local</th><th style="text-align:right">Funcionando</th><th style="text-align:right">Total</th></tr></thead><tbody>
-      ${locais.map(([local, info]) => `
-        <tr>
-          <td>${escapeHtml(local)}</td>
-          <td class="num"><span class="qty-badge ${info.funcionando === info.total ? 'ok' : 'low'}">${info.funcionando}</span></td>
-          <td class="num">${info.total}</td>
-        </tr>`).join('')}</tbody></table>`
+    ? locais.map(([local, info]) => `
+      <div class="list-item">
+        <div class="top-row">
+          <span class="scanner">${escapeHtml(local)}</span>
+          <span class="qty-badge ${info.foraDeOperacao ? 'low' : 'ok'}">${info.total} no total</span>
+        </div>
+        <div class="problem">
+          <span style="color:var(--green);font-weight:700">${info.funcionando} funcionando</span>
+          ${info.foraDeOperacao ? ` · <span style="color:var(--red);font-weight:700">${info.foraDeOperacao} fora de operação</span>` : ''}
+        </div>
+      </div>`).join('')
     : `<div class="empty"><span class="glyph">📍</span>Nenhum scanner cadastrado ainda.</div>`;
 }
 
