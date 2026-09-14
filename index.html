@@ -493,6 +493,11 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
     </div>
 
     <div class="card">
+      <h2>Scanners funcionando por local <span class="tag" id="dashLocaisTag">0</span></h2>
+      <div id="dashScannersPorLocalList"></div>
+    </div>
+
+    <div class="card">
       <h2>Scanners que precisam de atenção <span class="tag" id="dashScannersAlertaTag">0</span></h2>
       <div id="dashScannersAlertaList"></div>
     </div>
@@ -2636,6 +2641,35 @@ function dashRenderDonut(containerId, segmentos){
     <div class="donut-legend">${legenda}</div>`;
 }
 
+// Agrupa os scanners pelo campo "localizacao" (Cone, CEPE-Sede ou qualquer
+// outro local cadastrado no formulário do scanner) e mostra quantos estão
+// funcionando (em produção) e o total em cada local.
+function renderScannersPorLocal(){
+  const container = document.getElementById('dashScannersPorLocalList');
+  if(!container) return;
+
+  const porLocal = {};
+  scanners.forEach(s => {
+    const local = (s.localizacao || '').trim() || 'Sem local definido';
+    if(!porLocal[local]) porLocal[local] = { funcionando:0, total:0 };
+    porLocal[local].total++;
+    if((s.situacao || 'producao') === 'producao') porLocal[local].funcionando++;
+  });
+
+  const locais = Object.entries(porLocal).sort((a,b) => a[0].localeCompare(b[0], 'pt-BR'));
+  document.getElementById('dashLocaisTag').textContent = locais.length;
+
+  container.innerHTML = locais.length
+    ? `<table><thead><tr><th>Local</th><th style="text-align:right">Funcionando</th><th style="text-align:right">Total</th></tr></thead><tbody>
+      ${locais.map(([local, info]) => `
+        <tr>
+          <td>${escapeHtml(local)}</td>
+          <td class="num"><span class="qty-badge ${info.funcionando === info.total ? 'ok' : 'low'}">${info.funcionando}</span></td>
+          <td class="num">${info.total}</td>
+        </tr>`).join('')}</tbody></table>`
+    : `<div class="empty"><span class="glyph">📍</span>Nenhum scanner cadastrado ainda.</div>`;
+}
+
 function renderDashboard(){
   if(!document.getElementById('view-dashboard')) return;
 
@@ -2694,6 +2728,9 @@ function renderDashboard(){
     <span><span class="dot" style="background:${DASH_CORES.preventiva}"></span>Preventiva</span>
     <span><span class="dot" style="background:${DASH_CORES.corretiva}"></span>Corretiva</span>`;
   dashRenderGroupedBarChart('chartManutTipo', meses6.map(m => m.rotulo), preventivasPorMes, corretivasPorMes, DASH_CORES.preventiva, DASH_CORES.corretiva);
+
+  // ---- Lista: scanners funcionando por local (Cone, CEPE-Sede ou qualquer outro cadastrado) ----
+  renderScannersPorLocal();
 
   // ---- Lista: scanners que precisam de atenção ----
   document.getElementById('dashScannersAlertaTag').textContent = scannersAlerta.length;
