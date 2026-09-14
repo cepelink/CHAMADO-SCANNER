@@ -245,14 +245,14 @@
   .user-row .actions{ display:flex; gap:6px; flex-shrink:0; }
 
   /* ---------- modais (trocar senha / qr code) ---------- */
-  #senhaModalOverlay, #qrModalOverlay, #editChamadoModalOverlay, #editTrocaModalOverlay{
+  #senhaModalOverlay, #qrModalOverlay, #editChamadoModalOverlay, #editTrocaModalOverlay, #editManutModalOverlay{
     display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:150;
     align-items:center; justify-content:center; padding:20px;
   }
   /* o modal de QR precisa ficar sempre por cima de outros modais que possam
      estar abertos ao mesmo tempo (ex: bipar QR de dentro do modal de editar troca) */
   #qrModalOverlay{ z-index:160; }
-  #senhaModalOverlay.show, #qrModalOverlay.show, #editChamadoModalOverlay.show, #editTrocaModalOverlay.show{ display:flex; }
+  #senhaModalOverlay.show, #qrModalOverlay.show, #editChamadoModalOverlay.show, #editTrocaModalOverlay.show, #editManutModalOverlay.show{ display:flex; }
   .modal-card{
     width:100%; max-width:340px; background:var(--surface); border:1px solid var(--border);
     border-radius:12px; padding:20px;
@@ -372,7 +372,25 @@
     .list-item{ border-bottom-color:#ddd; }
     .list-item .problem, .list-item .meta{ color:#444; }
     .hint{ color:#444; }
+    .timeline-dot{ border-color:#111 !important; background:#fff !important; }
+    .timeline-dot.resolvido{ background:#111 !important; }
+    .timeline-line{ background:#999 !important; }
+    .timeline-time{ color:#666 !important; }
+    .timeline-text{ color:#444 !important; }
   }
+
+  /* Linha do tempo do chamado */
+  .timeline-item{ display:flex; gap:12px; }
+  .timeline-item .timeline-rail{ display:flex; flex-direction:column; align-items:center; }
+  .timeline-dot{ width:12px; height:12px; border-radius:50%; flex-shrink:0; border:2px solid var(--border); }
+  .timeline-dot.aberto{ background:var(--red); border-color:var(--red); }
+  .timeline-dot.andamento{ background:var(--amber); border-color:var(--amber); }
+  .timeline-dot.resolvido{ background:var(--green); border-color:var(--green); }
+  .timeline-line{ width:2px; flex:1; background:var(--border); margin:2px 0; }
+  .timeline-item .timeline-body{ padding-bottom:18px; }
+  .timeline-title{ font-weight:700; font-size:14px; }
+  .timeline-text{ font-size:13px; color:var(--text-dim); margin-top:2px; }
+  .timeline-time{ font-size:12px; color:var(--text-dim); margin-top:4px; font-family:var(--mono); }
 </style>
 
 <!-- Firebase (Firestore) -->
@@ -870,6 +888,24 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
     </div>
   </section>
 
+  <!-- LINHA DO TEMPO DE UM CHAMADO ESPECÍFICO (não aparece na navegação) -->
+  <section class="view" id="view-chamado-print">
+    <div class="card">
+      <div class="print-only print-header">
+        <h1>Linha do Tempo do Chamado — Scanners</h1>
+        <div class="print-meta" id="chPrintMeta"></div>
+      </div>
+      <div class="no-print" style="display:flex; gap:8px; margin-bottom:12px">
+        <button class="ghost" onclick="voltarDeChamadoPrint()">← Voltar</button>
+        <button class="ghost" onclick="window.print()">🖨 Imprimir / Salvar em PDF</button>
+      </div>
+      <h2>Chamado <span class="tag" id="chPrintStatusTag"></span></h2>
+      <div id="chPrintScannerInfo"></div>
+      <h2 style="margin-top:16px">Linha do tempo</h2>
+      <div id="chPrintTimeline" class="timeline"></div>
+    </div>
+  </section>
+
 </main>
 
 </div>
@@ -957,6 +993,37 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
     <div class="modal-actions">
       <button class="ghost" style="flex:1" onclick="fecharEditarTroca()">Cancelar</button>
       <button class="primary ok" style="flex:1" onclick="salvarEdicaoTroca()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL EDITAR MANUTENÇÃO -->
+<div id="editManutModalOverlay">
+  <div class="modal-card">
+    <h2>Editar manutenção</h2>
+    <div class="sub">Ajuste os dados deste registro. Peças e quantidades já baixadas do estoque não são alteradas por aqui.</div>
+    <input type="hidden" id="editManutId" value="">
+    <label>Scanner / patrimônio</label>
+    <div class="scanner-field-row">
+      <input id="editManutScanner" placeholder="Ex: Scanner 04 - Recepção" oninput="limparScannerInfo('editManutScannerInfo')">
+      <button class="ghost" type="button" onclick="abrirQrScanner('manutEdit')">📷 Bipar QR</button>
+    </div>
+    <select id="editManutScannerManualSelect" style="margin-top:8px" onchange="selecionarScannerManual('manutEdit', this.value); this.value='';">
+      <option value="">— ou selecione um scanner cadastrado —</option>
+    </select>
+    <div class="card" id="editManutScannerInfo" style="display:none;margin-top:10px;background:var(--surface-2)"></div>
+    <label>Data</label>
+    <input id="editManutData" type="date">
+    <div id="editManutCustoWrap">
+      <label>Custo (R$)</label>
+      <input id="editManutCusto" type="number" min="0" step="0.01" placeholder="Ex: 150.00">
+    </div>
+    <label>Observação</label>
+    <textarea id="editManutObs" placeholder="Detalhes da manutenção..."></textarea>
+    <div id="editManutErro"></div>
+    <div class="modal-actions">
+      <button class="ghost" style="flex:1" onclick="fecharEditarManutencao()">Cancelar</button>
+      <button class="primary ok" style="flex:1" onclick="salvarEdicaoManutencao()">Salvar</button>
     </div>
   </div>
 </div>
@@ -1130,6 +1197,14 @@ async function saveScannerDoc(s){
 async function deleteScannerDoc(id){
   try{ await db.collection('scanners').doc(id).delete(); }
   catch(e){ showToast('Erro ao excluir scanner', true); }
+}
+async function deleteMaintenanceDoc(id){
+  try{ await db.collection('maintenances').doc(id).delete(); }
+  catch(e){ showToast('Erro ao excluir manutenção', true); }
+}
+async function deleteMovementDoc(id){
+  try{ await db.collection('movements').doc(id).delete(); }
+  catch(e){ /* movimentação vinculada — falha aqui não impede a exclusão da manutenção */ }
 }
 
 
@@ -1666,7 +1741,8 @@ const scannerAlvoMap = {
   chamado: { campo: 'chScanner', box: 'chScannerInfo' },
   troca: { campo: 'trocaScanner', box: 'trocaScannerInfo' },
   manutencao: { campo: 'manutScanner', box: 'manutScannerInfo' },
-  trocaEdit: { campo: 'editTrocaScanner', box: 'editTrocaScannerInfo' }
+  trocaEdit: { campo: 'editTrocaScanner', box: 'editTrocaScannerInfo' },
+  manutEdit: { campo: 'editManutScanner', box: 'editManutScannerInfo' }
 };
 
 // Aplica um scanner (vindo do QR Code ou escolhido manualmente) ao campo/caixa
@@ -1701,7 +1777,7 @@ function fillManualScannerSelects(){
   const opts = listaOrdenada.map(s =>
     `<option value="${escapeHtml(s.id)}">${escapeHtml(s.nome)}${s.patrimonio ? ' — Tombo ' + escapeHtml(s.patrimonio) : ''}</option>`
   ).join('');
-  ['trocaScannerManualSelect','manutScannerManualSelect','chScannerManualSelect','editTrocaScannerManualSelect'].forEach(id => {
+  ['trocaScannerManualSelect','manutScannerManualSelect','chScannerManualSelect','editTrocaScannerManualSelect','editManutScannerManualSelect'].forEach(id => {
     const sel = document.getElementById(id);
     if(!sel) return;
     sel.innerHTML = `<option value="">— ou selecione um scanner cadastrado —</option>${opts}`;
@@ -2061,6 +2137,7 @@ async function abrirChamado(){
   } : null;
 
   const ticket = { id: uid(), scanner, scannerInfo, problema, status:'aberto', data: new Date().toISOString() };
+  ticket.historico = [{ data: ticket.data, status: 'aberto', texto: problema, usuario: currentUser ? currentUser.nome : null }];
   tickets.unshift(ticket);
   await saveTicket(ticket);
 
@@ -2080,6 +2157,8 @@ async function avancarStatus(id){
     t.status = 'resolvido';
     t.dataResolucao = new Date().toISOString(); // marca quando o chamado foi finalizado
   }
+  if(!Array.isArray(t.historico)) t.historico = [];
+  t.historico.push({ data: new Date().toISOString(), status: t.status, texto: '', usuario: currentUser ? currentUser.nome : null });
   await saveTicket(t);
   renderAll();
 }
@@ -2133,6 +2212,7 @@ async function salvarEdicaoChamado(){
 
   t.scanner = scanner;
   t.problema = problema;
+  const statusAnterior = t.status;
   t.status = status;
 
   if(status === 'resolvido'){
@@ -2141,6 +2221,11 @@ async function salvarEdicaoChamado(){
     t.dataResolucao = new Date(ry, rmo - 1, rda, horaResOriginal.getHours(), horaResOriginal.getMinutes()).toISOString();
   } else {
     delete t.dataResolucao;
+  }
+
+  if(status !== statusAnterior){
+    if(!Array.isArray(t.historico)) t.historico = [];
+    t.historico.push({ data: new Date().toISOString(), status: status, texto: 'Status alterado manualmente na edição', usuario: currentUser ? currentUser.nome : null });
   }
 
   await saveTicket(t);
@@ -2391,6 +2476,7 @@ function renderChamados(){
       <div class="meta">Aberto em ${fmtDate(t.data)}${t.status === 'resolvido' && t.dataResolucao ? ' · Finalizado em ' + fmtDate(t.dataResolucao) : ''}</div>
       <div class="actions">
         ${t.status !== 'resolvido' ? `<button class="ghost" onclick="avancarStatus('${t.id}')">${t.status === 'aberto' ? 'Marcar em andamento' : 'Marcar resolvido'}</button>` : ''}
+        <button class="ghost" onclick="verLinhaDoTempoChamado('${t.id}')">🕐 Linha do tempo</button>
         <button class="ghost" onclick="abrirEditarChamado('${t.id}')">Editar</button>
         <button class="ghost" onclick="excluirChamado('${t.id}')">Excluir</button>
       </div>
@@ -2488,6 +2574,8 @@ function renderManutList(){
       <div class="meta">${fmtDate(m.data)}</div>
       <div class="actions">
         <button class="ghost" onclick="imprimirManutencao('${m.id}')">🖨 Imprimir</button>
+        <button class="ghost" onclick="abrirEditarManutencao('${m.id}')">✏ Editar</button>
+        <button class="ghost" onclick="excluirManutencao('${m.id}')">🗑 Excluir</button>
       </div>
     </div>`;
   }).join('');
@@ -2537,6 +2625,155 @@ function imprimirManutencao(id){
   window.addEventListener('afterprint', restaurarView);
 
   window.print();
+}
+
+// ---------- edição/exclusão de manutenção ----------
+function abrirEditarManutencao(id){
+  const m = maintenances.find(x => x.id === id);
+  if(!m) return;
+  document.getElementById('editManutId').value = m.id;
+  document.getElementById('editManutScanner').value = m.scanner || '';
+  document.getElementById('editManutData').value = (m.data || '').slice(0,10);
+  document.getElementById('editManutObs').value = m.obs || '';
+  document.getElementById('editManutCusto').value = m.custo != null ? m.custo : '';
+  document.getElementById('editManutCustoWrap').style.display = m.tipo === 'corretiva' ? 'block' : 'none';
+  document.getElementById('editManutErro').textContent = '';
+  limparScannerInfo('editManutScannerInfo');
+  // se o nome bate com um scanner já cadastrado, mostra os dados completos dele
+  const scannerCad = m.scanner ? scanners.find(s => s.nome === m.scanner) : null;
+  if(scannerCad) exibirScannerInfo('editManutScannerInfo', scannerCad);
+  document.getElementById('editManutModalOverlay').classList.add('show');
+}
+
+function fecharEditarManutencao(){
+  document.getElementById('editManutModalOverlay').classList.remove('show');
+}
+
+async function salvarEdicaoManutencao(){
+  const id = document.getElementById('editManutId').value;
+  const m = maintenances.find(x => x.id === id);
+  if(!m) return;
+
+  const scanner = document.getElementById('editManutScanner').value.trim();
+  const dataInput = document.getElementById('editManutData').value;
+  const obs = document.getElementById('editManutObs').value.trim();
+  const custoInput = document.getElementById('editManutCusto').value.trim();
+  const erro = document.getElementById('editManutErro');
+  erro.textContent = '';
+
+  if(!scanner){ erro.textContent = 'Informe o scanner.'; return; }
+  if(!dataInput){ erro.textContent = 'Informe a data.'; return; }
+
+  // não mexe em peças/quantidades/estoque já baixados — só corrige os dados de identificação do registro
+  const agora = new Date();
+  const [ano, mes, dia] = dataInput.split('-').map(Number);
+  const dataManut = new Date(ano, mes - 1, dia, agora.getHours(), agora.getMinutes());
+
+  m.scanner = scanner;
+  m.obs = obs;
+  m.data = dataManut.toISOString();
+  if(m.tipo === 'corretiva'){
+    m.custo = custoInput ? parseFloat(custoInput) : null;
+  }
+
+  await saveMaintenance(m);
+  fecharEditarManutencao();
+  showToast('Manutenção atualizada');
+  renderAll();
+}
+
+// Devolve ao estoque as peças baixadas por uma manutenção e remove as
+// movimentações de estoque vinculadas a ela (usado ao excluir o registro).
+async function estornarEstoqueManutencao(m){
+  for(const it of (m.itens || [])){
+    const part = parts.find(p => p.id === it.partId);
+    if(!part) continue;
+    try{
+      const ref = db.collection('parts').doc(part.id);
+      let qtdFinal;
+      await db.runTransaction(async (tx) => {
+        const doc = await tx.get(ref);
+        const atual = doc.exists ? (doc.data().qtd || 0) : part.qtd;
+        qtdFinal = atual + it.qtd;
+        tx.set(ref, { ...part, qtd: qtdFinal });
+      });
+      part.qtd = qtdFinal;
+    }catch(e){ /* se o estorno de uma peça falhar, segue tentando devolver as demais */ }
+  }
+  const vinculadas = movements.filter(mv => mv.maintenanceId === m.id);
+  for(const mv of vinculadas){
+    await deleteMovementDoc(mv.id);
+  }
+  movements = movements.filter(mv => mv.maintenanceId !== m.id);
+}
+
+async function excluirManutencao(id){
+  const m = maintenances.find(x => x.id === id);
+  if(!m) return;
+  const temItens = m.itens && m.itens.length;
+  const ok = confirm(temItens
+    ? 'Excluir esta manutenção? As peças baixadas no estoque serão devolvidas.'
+    : 'Excluir esta manutenção?');
+  if(!ok) return;
+
+  if(temItens) await estornarEstoqueManutencao(m);
+
+  maintenances = maintenances.filter(x => x.id !== id);
+  await deleteMaintenanceDoc(id);
+  fillPecaSelects();
+  renderAll();
+  showToast('Manutenção excluída');
+}
+
+// ---------- linha do tempo de um chamado (ver na tela e/ou imprimir em PDF) ----------
+let chamadoPrintViewAnterior = null;
+
+function verLinhaDoTempoChamado(id){
+  const t = tickets.find(x => x.id === id);
+  if(!t) return;
+
+  const labels = { aberto:'Aberto', andamento:'Em andamento', resolvido:'Resolvido' };
+  document.getElementById('chPrintStatusTag').textContent = labels[t.status] || t.status;
+  document.getElementById('chPrintMeta').textContent =
+    `Chamado: ${t.scanner || '(sem identificação)'}  ·  Emitido em: ${fmtDate(new Date().toISOString())}`;
+
+  const scannerInfoHtml = fmtScannerInfoChamado(t.scannerInfo);
+  document.getElementById('chPrintScannerInfo').innerHTML =
+    `<div class="problem">${escapeHtml(t.problema)}</div>${scannerInfoHtml || ''}`;
+
+  // Monta a linha do tempo a partir do histórico registrado a cada mudança
+  // de status. Chamados abertos antes desse recurso existir não têm
+  // histórico salvo, então cai de volta para os pontos que sempre
+  // existiram: abertura e, se houver, finalização.
+  const pontos = Array.isArray(t.historico) && t.historico.length
+    ? t.historico.slice()
+    : [{ data: t.data, status: 'aberto', texto: t.problema, usuario: null }];
+
+  if(!Array.isArray(t.historico) && t.status === 'resolvido' && t.dataResolucao){
+    pontos.push({ data: t.dataResolucao, status: 'resolvido', texto: '', usuario: null });
+  }
+
+  document.getElementById('chPrintTimeline').innerHTML = pontos.map((p, i) => `
+    <div class="timeline-item">
+      <div class="timeline-rail">
+        <div class="timeline-dot ${p.status}"></div>
+        ${i < pontos.length - 1 ? '<div class="timeline-line"></div>' : ''}
+      </div>
+      <div class="timeline-body">
+        <div class="timeline-title">${escapeHtml(labels[p.status] || p.status)}</div>
+        ${p.texto ? `<div class="timeline-text">${escapeHtml(p.texto)}</div>` : ''}
+        <div class="timeline-time">${fmtDate(p.data)}${p.usuario ? ' · ' + escapeHtml(p.usuario) : ''}</div>
+      </div>
+    </div>`).join('');
+
+  chamadoPrintViewAnterior = document.querySelector('.view.active');
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-chamado-print').classList.add('active');
+}
+
+function voltarDeChamadoPrint(){
+  document.getElementById('view-chamado-print').classList.remove('active');
+  if(chamadoPrintViewAnterior) chamadoPrintViewAnterior.classList.add('active');
 }
 
 // ---------- dashboard ----------
