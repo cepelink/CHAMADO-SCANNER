@@ -2500,8 +2500,48 @@ function renderTrocaList(){
       <div class="meta">Trocado em ${fmtDate(m.data)}${m.scanner ? ' · ' + escapeHtml(m.scanner) : ''}${m.contadorImagens != null ? ' · Contador: ' + m.contadorImagens.toLocaleString('pt-BR') : ''}${m.obs ? ' · ' + escapeHtml(m.obs) : ''}</div>
       <div class="actions">
         <button class="ghost" onclick="abrirEditarTroca('${m.id}')">✏ Editar</button>
+        <button class="ghost" onclick="excluirTroca('${m.id}')">🗑 Excluir</button>
       </div>
     </div>`).join('');
+}
+
+// Exclui uma troca de peça já lançada e devolve a quantidade ao estoque.
+// Usa transação no Firestore (mesmo padrão de aplicarMovimentoEstoque) para
+// garantir que a devolução ao estoque e a remoção do registro fiquem
+// consistentes mesmo se duas pessoas mexerem no sistema ao mesmo tempo.
+async function excluirTroca(id){
+  const m = movements.find(x => x.id === id && x.tipo === 'troca');
+  if(!m) return;
+
+  const ok = confirm(`Excluir esta troca de "${m.partNome}"? A quantidade (${m.qtd}) será devolvida ao estoque.`);
+  if(!ok) return;
+
+  const part = parts.find(p => p.id === m.partId);
+  try{
+    if(part){
+      const ref = db.collection('parts').doc(part.id);
+      let qtdFinal;
+      await db.runTransaction(async (tx) => {
+        const doc = await tx.get(ref);
+        const atual = doc.exists ? (doc.data().qtd || 0) : part.qtd;
+        qtdFinal = atual + m.qtd;
+        tx.set(ref, { ...part, qtd: qtdFinal });
+        tx.delete(db.collection('movements').doc(m.id));
+      });
+      part.qtd = qtdFinal;
+    } else {
+      // peça não existe mais no cadastro — só remove o registro da troca
+      await deleteMovementDoc(m.id);
+    }
+  } catch(e){
+    showToast('Erro ao excluir troca. Tente novamente.', true);
+    return;
+  }
+
+  movements = movements.filter(x => x.id !== id);
+  fillPecaSelects();
+  renderAll();
+  showToast('Troca excluída — peça devolvida ao estoque');
 }
 
 // ---------- edição de troca (scanner, contador de imagens, observação) ----------
