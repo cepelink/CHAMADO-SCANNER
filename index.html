@@ -843,6 +843,40 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
       <div id="relManutResumo"></div>
       <div id="relManutDetalhe" style="margin-top:10px"></div>
     </div>
+
+    <div class="card" style="margin-top:20px">
+      <h2>Relatório de chamados <span class="tag">qtd. em aberto / tempo de resposta</span></h2>
+      <label>Scanner</label>
+      <select id="relChamScanner"></select>
+      <label>Situação</label>
+      <select id="relChamStatus">
+        <option value="abertos">Em aberto (aberto + em andamento)</option>
+        <option value="aberto">Aberto</option>
+        <option value="andamento">Em andamento</option>
+        <option value="resolvido">Resolvido</option>
+        <option value="">Todas as situações</option>
+      </select>
+      <label>Período</label>
+      <select id="relChamPeriodo">
+        <option value="semana">Semana</option>
+        <option value="mes">Mês</option>
+        <option value="ano">Ano</option>
+        <option value="todos" selected>Todo o período</option>
+      </select>
+      <label id="relChamDataLabel">Data de referência</label>
+      <input id="relChamData" type="date">
+      <button class="primary info" onclick="gerarRelatorioChamados()">Gerar relatório</button>
+    </div>
+    <div class="card" id="relChamResultCard" style="display:none">
+      <div class="print-only print-header">
+        <h1>Relatório de Chamados — Scanners</h1>
+        <div class="print-meta" id="relChamPrintMeta"></div>
+      </div>
+      <h2>Resultado <span class="tag" id="relChamPeriodoTag"></span></h2>
+      <button class="ghost no-print" style="margin-bottom:12px" onclick="window.print()">🖨 Imprimir / Salvar em PDF</button>
+      <div id="relChamResumo"></div>
+      <div id="relChamDetalhe" style="margin-top:10px"></div>
+    </div>
   </section>
 
   <!-- USUÁRIOS -->
@@ -1336,8 +1370,10 @@ document.getElementById('tabs').addEventListener('click', (e)=>{
     fillRelScannerSelect();
     fillRelManutScannerSelect();
     fillRelManutContratoSelect();
+    fillRelChamScannerSelect();
     if(!document.getElementById('relData').value) document.getElementById('relData').value = todayStr();
     if(!document.getElementById('relManutData').value) document.getElementById('relManutData').value = todayStr();
+    if(!document.getElementById('relChamData').value) document.getElementById('relChamData').value = todayStr();
   }
   if(btn.dataset.view === 'usuarios') renderUsers();
   if(btn.dataset.view === 'dashboard') renderDashboard();
@@ -3290,6 +3326,117 @@ function gerarRelatorioManutencao(){
         <div class="actions no-print">
           <button class="ghost" onclick="imprimirManutencao('${m.id}')">🖨 Imprimir</button>
         </div>
+      </div>`;
+    }).join('')}
+  `;
+}
+
+// ---------- relatório de chamados ----------
+function fillRelChamScannerSelect(){
+  const nomes = [...new Set(tickets.filter(t => t.scanner).map(t => t.scanner))].sort();
+  const sel = document.getElementById('relChamScanner');
+  const opts = ['<option value="">Todos os scanners</option>'].concat(
+    nomes.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`)
+  );
+  sel.innerHTML = opts.join('');
+}
+
+// Formata uma diferença de tempo (em ms) como "Xd Yh Zmin", omitindo unidades zeradas
+function fmtDuracao(ms){
+  if(!ms || ms < 0) ms = 0;
+  const totalMin = Math.floor(ms / 60000);
+  const dias = Math.floor(totalMin / (60*24));
+  const horas = Math.floor((totalMin % (60*24)) / 60);
+  const min = totalMin % 60;
+  const partes = [];
+  if(dias) partes.push(dias + (dias === 1 ? ' dia' : ' dias'));
+  if(horas) partes.push(horas + 'h');
+  if(!dias && min) partes.push(min + 'min');
+  return partes.length ? partes.join(' ') : 'menos de 1min';
+}
+
+function gerarRelatorioChamados(){
+  const scannerFiltro = document.getElementById('relChamScanner').value;
+  const statusFiltro = document.getElementById('relChamStatus').value; // '', 'aberto', 'andamento', 'resolvido', 'abertos'
+  const periodo = document.getElementById('relChamPeriodo').value;
+  const refDateStr = document.getElementById('relChamData').value || todayStr();
+  const { start, end } = getPeriodoRange(periodo, refDateStr);
+
+  const chamados = tickets.filter(t => {
+    const d = new Date(t.data);
+    if(d < start || d > end) return false;
+    if(scannerFiltro && t.scanner !== scannerFiltro) return false;
+    if(statusFiltro === 'abertos'){ if(t.status === 'resolvido') return false; }
+    else if(statusFiltro){ if(t.status !== statusFiltro) return false; }
+    return true;
+  }).sort((a,b) => new Date(b.data) - new Date(a.data));
+
+  document.getElementById('relChamPeriodoTag').textContent = fmtPeriodoLabel(periodo, start, end);
+  document.getElementById('relChamResultCard').style.display = 'block';
+  const statusLabels = { abertos:'Em aberto (aberto + em andamento)', aberto:'Aberto', andamento:'Em andamento', resolvido:'Resolvido', '':'Todas' };
+  let scannerLabel = scannerFiltro ? scannerFiltro : 'Todos os scanners';
+  document.getElementById('relChamPrintMeta').textContent =
+    `Scanner: ${scannerLabel}  ·  Situação: ${statusLabels[statusFiltro]}  ·  Período: ${fmtPeriodoLabel(periodo, start, end)}  ·  Emitido em: ${fmtDate(new Date().toISOString())}`;
+
+  const resumo = document.getElementById('relChamResumo');
+  const detalhe = document.getElementById('relChamDetalhe');
+
+  if(!chamados.length){
+    resumo.innerHTML = `<div class="empty"><span class="glyph">◎</span>Nenhum chamado encontrado nesse período.</div>`;
+    detalhe.innerHTML = '';
+    return;
+  }
+
+  const emAbertoCount = chamados.filter(t => t.status !== 'resolvido').length;
+  const resolvidosCount = chamados.length - emAbertoCount;
+
+  // Quantidade de chamados em aberto por scanner (nome, número de série, empresa responsável)
+  const porScanner = {};
+  chamados.forEach(t => {
+    if(t.status === 'resolvido') return;
+    const nome = t.scanner || '(sem identificação)';
+    if(!porScanner[nome]) porScanner[nome] = { qtd:0, info: t.scannerInfo || null };
+    porScanner[nome].qtd++;
+    if(!porScanner[nome].info && t.scannerInfo) porScanner[nome].info = t.scannerInfo;
+  });
+  const linhasScanner = Object.entries(porScanner).sort((a,b) => b[1].qtd - a[1].qtd)
+    .map(([nome, dados]) => {
+      const info = dados.info || getScannerInfoByNome(nome);
+      const serie = info && info.numeroSerie ? escapeHtml(info.numeroSerie) : '—';
+      const empresa = info && info.contrato ? escapeHtml(info.contrato) : '—';
+      return `<tr><td>${escapeHtml(nome)}</td><td>${serie}</td><td>${empresa}</td><td class="num"><span class="qty-badge low">${dados.qtd}</span></td></tr>`;
+    }).join('');
+
+  resumo.innerHTML = `
+    <div class="hint" style="margin-bottom:8px;font-size:13px">
+      Total de chamados no período: <strong style="color:var(--text)">${chamados.length}</strong>
+      · Em aberto: <strong style="color:var(--text)">${emAbertoCount}</strong>
+      · Resolvidos: <strong style="color:var(--text)">${resolvidosCount}</strong>
+    </div>
+    ${linhasScanner ? `<h2 style="margin-top:16px">Chamados em aberto por scanner</h2>
+    <table><thead><tr><th>Scanner</th><th>Nº de série</th><th>Empresa responsável</th><th style="text-align:right">Qtd. em aberto</th></tr></thead><tbody>${linhasScanner}</tbody></table>`
+    : '<div class="hint" style="margin-top:10px">Nenhum chamado em aberto no período — todos resolvidos.</div>'}
+  `;
+
+  const agora = new Date();
+  detalhe.innerHTML = `
+    <h2 style="margin-top:16px">Detalhamento e tempo de resposta</h2>
+    ${chamados.map(t => {
+      const info = t.scannerInfo || getScannerInfoByNome(t.scanner);
+      const serie = info && info.numeroSerie ? escapeHtml(info.numeroSerie) : '—';
+      const empresa = info && info.contrato ? escapeHtml(info.contrato) : '—';
+      const statusLbl = t.status === 'aberto' ? 'Aberto' : (t.status === 'andamento' ? 'Em andamento' : 'Resolvido');
+      const tempoTxt = (t.status === 'resolvido' && t.dataResolucao)
+        ? 'Resolvido em ' + fmtDuracao(new Date(t.dataResolucao) - new Date(t.data))
+        : 'Em aberto há ' + fmtDuracao(agora - new Date(t.data));
+      return `
+      <div class="list-item">
+        <div class="top-row">
+          <span class="scanner">${escapeHtml(t.scanner || '(sem identificação)')}</span>
+          <span class="status-pill status-${t.status}">${statusLbl}</span>
+        </div>
+        <div class="problem">${escapeHtml(t.problema || '')}</div>
+        <div class="meta">Série ${serie} · Empresa ${empresa} · Aberto em ${fmtDate(t.data)}${t.status === 'resolvido' && t.dataResolucao ? ' · Finalizado em ' + fmtDate(t.dataResolucao) : ''} · ${tempoTxt}</div>
       </div>`;
     }).join('')}
   `;
