@@ -1014,7 +1014,7 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
 <div id="editTrocaModalOverlay">
   <div class="modal-card">
     <h2>Editar troca</h2>
-    <div class="sub">Ajuste o scanner, o contador de imagens ou a observação desta troca.</div>
+    <div class="sub">Ajuste o scanner, o contador de imagens, a observação ou (administrador) quem lançou esta troca.</div>
     <input type="hidden" id="editTrocaId" value="">
     <label>Scanner / patrimônio</label>
     <div class="scanner-field-row">
@@ -1029,6 +1029,10 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
     <input id="editTrocaContador" type="number" min="0" placeholder="Ex: 152340">
     <label>Observação</label>
     <textarea id="editTrocaObs" placeholder="Motivo da troca, defeito apresentado..."></textarea>
+    <div id="editTrocaUsuarioBox" style="display:none">
+      <label>Lançado por</label>
+      <select id="editTrocaUsuario"></select>
+    </div>
     <div id="editTrocaErro"></div>
     <div class="modal-actions">
       <button class="ghost" style="flex:1" onclick="fecharEditarTroca()">Cancelar</button>
@@ -1971,7 +1975,7 @@ async function lancarTroca(){
   const agora = new Date();
   const [ano, mes, dia] = dataInput.split('-').map(Number);
   const dataTroca = new Date(ano, mes - 1, dia, agora.getHours(), agora.getMinutes());
-  const novoMov = { id: uid(), tipo:'troca', partId, partNome: part.nome, qtd, scanner, contadorImagens, obs, data: dataTroca.toISOString() };
+  const novoMov = { id: uid(), tipo:'troca', partId, partNome: part.nome, qtd, scanner, contadorImagens, obs, data: dataTroca.toISOString(), usuario: currentUser ? (currentUser.nome || currentUser.login || '') : '' };
 
   btn.disabled = true;
   try{
@@ -2581,11 +2585,13 @@ function labelMovTipo(tipo){
 
 function renderMovs(){
   const list = document.getElementById('movList');
-  if(!movements.length){
+  // ajustes manuais de estoque ficam ocultos nesta lista (continuam gravados)
+  const visiveis = movements.filter(m => m.tipo !== 'ajuste');
+  if(!visiveis.length){
     list.innerHTML = `<div class="empty"><span class="glyph">≡</span>Nenhuma movimentação registrada.</div>`;
     return;
   }
-  const recent = movements.slice().sort((a,b)=> new Date(b.data) - new Date(a.data)).slice(0, 12);
+  const recent = visiveis.slice().sort((a,b)=> new Date(b.data) - new Date(a.data)).slice(0, 12);
   list.innerHTML = recent.map(m => `
     <div class="list-item">
       <div class="top-row">
@@ -2647,7 +2653,7 @@ function renderTrocaList(){
         <span><span class="move-type troca">Troca</span> ${escapeHtml(m.partNome)}</span>
         <span class="num" style="font-weight:700">-${m.qtd}</span>
       </div>
-      <div class="meta">Trocado em ${fmtDate(m.data)}${m.scanner ? ' · ' + escapeHtml(m.scanner) : ''}${m.contadorImagens != null ? ' · Contador: ' + m.contadorImagens.toLocaleString('pt-BR') : ''}${m.obs ? ' · ' + escapeHtml(m.obs) : ''}</div>
+      <div class="meta">Trocado em ${fmtDate(m.data)}${m.scanner ? ' · ' + escapeHtml(m.scanner) : ''}${m.contadorImagens != null ? ' · Contador: ' + m.contadorImagens.toLocaleString('pt-BR') : ''}${m.obs ? ' · ' + escapeHtml(m.obs) : ''}${m.usuario ? ' · Lançado por ' + escapeHtml(m.usuario) : ''}</div>
       <div class="actions">
         <button class="ghost" onclick="abrirEditarTroca('${m.id}')">✏ Editar</button>
         <button class="ghost" onclick="excluirTroca('${m.id}')">🗑 Excluir</button>
@@ -2703,6 +2709,17 @@ function abrirEditarTroca(id){
   document.getElementById('editTrocaContador').value = m.contadorImagens != null ? m.contadorImagens : '';
   document.getElementById('editTrocaObs').value = m.obs || '';
   document.getElementById('editTrocaErro').textContent = '';
+  // somente o administrador pode informar/corrigir quem lançou a troca
+  const ehAdmin = !!(currentUser && currentUser.perfil === 'administrador');
+  document.getElementById('editTrocaUsuarioBox').style.display = ehAdmin ? 'block' : 'none';
+  if(ehAdmin){
+    const nomes = users.map(u => u.nome || u.login).filter(Boolean);
+    if(m.usuario && !nomes.includes(m.usuario)) nomes.push(m.usuario);
+    const selU = document.getElementById('editTrocaUsuario');
+    selU.innerHTML = '<option value="">— não informado —</option>' +
+      nomes.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+    selU.value = m.usuario || '';
+  }
   limparScannerInfo('editTrocaScannerInfo');
   // se o nome bate com um scanner já cadastrado, mostra os dados completos dele
   const scannerCad = m.scanner ? scanners.find(s => s.nome === m.scanner) : null;
@@ -2731,6 +2748,9 @@ async function salvarEdicaoTroca(){
   m.scanner = scanner;
   m.contadorImagens = contadorInput ? parseInt(contadorInput) : null;
   m.obs = obs;
+  if(currentUser && currentUser.perfil === 'administrador'){
+    m.usuario = document.getElementById('editTrocaUsuario').value;
+  }
 
   await saveMovement(m);
   fecharEditarTroca();
@@ -3342,7 +3362,7 @@ function gerarRelatorio(){
           <span><span class="move-type troca">Troca</span> ${escapeHtml(m.partNome)}</span>
           <span class="num" style="font-weight:700">-${m.qtd}</span>
         </div>
-        <div class="meta">${fmtDate(m.data)}${m.scanner ? ' · ' + escapeHtml(m.scanner) + fmtScannerVinculo(m.scanner) : ''}${m.contadorImagens != null ? ' · Contador: ' + m.contadorImagens.toLocaleString('pt-BR') : ''}${m.obs ? ' · ' + escapeHtml(m.obs) : ''}</div>
+        <div class="meta">${fmtDate(m.data)}${m.scanner ? ' · ' + escapeHtml(m.scanner) + fmtScannerVinculo(m.scanner) : ''}${m.contadorImagens != null ? ' · Contador: ' + m.contadorImagens.toLocaleString('pt-BR') : ''}${m.obs ? ' · ' + escapeHtml(m.obs) : ''}${m.usuario ? ' · Lançado por ' + escapeHtml(m.usuario) : ''}</div>
       </div>`).join('')}
   `;
 }
