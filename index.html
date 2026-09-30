@@ -3678,6 +3678,51 @@ loadUsersAndBoot();
   if('serviceWorker' in navigator){
     window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(()=>{}); });
   }
+
+  // ---------- atualização automática do app ----------
+  // Compara a versão publicada com a última que este aparelho viu.
+  // Ao abrir o app ou voltar para ele, atualiza sozinho; durante o uso, avisa com um botão.
+  (function(){
+    const KEY = 'appVersionHash';
+    const url = location.href.split('#')[0].split('?')[0];
+    let bannerAberto = false;
+
+    function hash(t){ let h = 0; for(let i=0;i<t.length;i++){ h = (h*31 + t.charCodeAt(i)) | 0; } return h + '-' + t.length; }
+    function lerSalvo(){ try{ return localStorage.getItem(KEY); }catch(e){ return null; } }
+    function salvar(h){ try{ localStorage.setItem(KEY, h); }catch(e){} }
+
+    async function versaoPublicada(){
+      try{
+        const r = await fetch(url + '?_=' + Date.now(), { cache: 'no-store' });
+        if(!r.ok) return null;
+        return hash(await r.text());
+      }catch(e){ return null; }
+    }
+
+    function mostrarAviso(h){
+      if(bannerAberto) return;
+      bannerAberto = true;
+      const b = document.createElement('div');
+      b.style.cssText = 'position:fixed;left:12px;right:12px;bottom:12px;z-index:99999;background:#006600;color:#fff;padding:12px 14px;border-radius:12px;display:flex;align-items:center;gap:12px;justify-content:space-between;box-shadow:0 6px 24px rgba(0,0,0,.25);font:600 14px system-ui,sans-serif';
+      b.innerHTML = '<span>Nova versão disponível</span><button style="background:#fff;color:#006600;border:0;border-radius:8px;padding:8px 14px;font:700 14px system-ui,sans-serif;cursor:pointer">Atualizar</button>';
+      b.querySelector('button').onclick = () => { salvar(h); location.reload(); };
+      document.body.appendChild(b);
+    }
+
+    async function verificar(automatico){
+      const h = await versaoPublicada();
+      if(!h) return;
+      const salvo = lerSalvo();
+      if(!salvo){ salvar(h); return; }
+      if(h === salvo) return;
+      if(automatico){ salvar(h); location.reload(); }
+      else mostrarAviso(h);
+    }
+
+    window.addEventListener('load', () => verificar(true));
+    document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible') verificar(true); });
+    setInterval(() => verificar(false), 10 * 60 * 1000);
+  })();
 </script>
 
 </body>
