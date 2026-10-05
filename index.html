@@ -353,6 +353,10 @@
   .scanner-resumo .stat .lbl{ font-size:11px; color:var(--text-dim); margin-top:2px; }
   .scanner-resumo .stat .sub{ font-size:11px; color:var(--text-dim); margin-top:6px; line-height:1.5; }
   #scannerLocalExternoWrap{ margin-top:0; }
+  .insp-row{ border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px; background:var(--surface-2); }
+  .insp-row-head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; }
+  .insp-row-head b{ font-size:13.5px; }
+  .insp-row-head button{ padding:4px 10px; font-size:12px; }
 
   .print-only{ display:none; }
 
@@ -471,6 +475,7 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
   <button data-view="estoque" data-roles="administrador,tecnico">Estoque</button>
   <button data-view="cadastro" data-roles="administrador">Cadastrar</button>
   <button data-view="scanners" data-roles="administrador">Scanners</button>
+  <button data-view="inspecao" data-roles="administrador">Inspeção</button>
   <button data-view="entrada" data-roles="administrador">Entrada</button>
   <button data-view="troca" data-roles="administrador,operador">Troca</button>
   <button data-view="manutencao" data-roles="administrador,tecnico">Manutenção</button>
@@ -524,8 +529,13 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
     </div>
 
     <div class="card">
-      <h2>Scanners funcionando por local <span class="tag" id="dashLocaisTag">0</span></h2>
+      <h2>Scanners de produção (captura) por local <span class="tag" id="dashLocaisTag">0</span></h2>
       <div id="dashScannersPorLocalList"></div>
+    </div>
+
+    <div class="card">
+      <h2>Scanners de inspeção por local <span class="tag" id="dashLocaisInspTag">0</span></h2>
+      <div id="dashScannersInspPorLocalList"></div>
     </div>
 
     <div class="card">
@@ -643,6 +653,36 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
       <div class="hint" style="margin-bottom:8px">Cada scanner tem um QR Code próprio, com marca, modelo, número de série e tombo gravados dentro do código. Imprima e cole no equipamento — na hora da troca, o funcionário só bipa o código.</div>
       <div class="scanner-resumo" id="scannerResumo"></div>
       <div id="scannersList"></div>
+    </div>
+  </section>
+
+  <!-- SCANNERS DE INSPEÇÃO -->
+  <section class="view" id="view-inspecao">
+    <div class="card">
+      <h2>Lançar scanners de inspeção</h2>
+      <div class="hint" style="margin-bottom:8px">Os nomes já vêm preenchidos (Inspeção 01 - , Inspeção 02 - ...). Complete a marca e o modelo de cada um e salve todos de uma vez. Linhas que você não mexer são ignoradas.</div>
+      <label>Localização (vale para todos — opcional)</label>
+      <input id="inspLocal" placeholder="Ex: Recepção - Térreo" list="listaLocaisScanner" autocomplete="off">
+      <div class="row">
+        <div>
+          <label>Contrato (opcional)</label>
+          <input id="inspContrato" placeholder="Ex: Contrato 012/2025">
+        </div>
+        <div>
+          <label>Data fim da garantia (opcional)</label>
+          <input id="inspGarantia" type="date">
+        </div>
+      </div>
+      <datalist id="listaMarcasScanner"></datalist>
+      <datalist id="listaModelosScanner"></datalist>
+      <div id="inspGrid" style="margin-top:14px"></div>
+      <button class="ghost" style="margin-bottom:8px" onclick="addInspecaoLinha()">+ Adicionar linha</button>
+      <button class="primary" onclick="salvarInspecaoLote()">Salvar scanners de inspeção</button>
+    </div>
+    <div class="card">
+      <h2>Scanners de inspeção cadastrados <span class="tag" id="totalInspecaoTag">0</span></h2>
+      <div class="scanner-resumo" id="inspecaoResumo"></div>
+      <div id="inspecaoList"></div>
     </div>
   </section>
 
@@ -1415,9 +1455,15 @@ document.getElementById('tabs').addEventListener('click', (e)=>{
     if(!document.getElementById('relManutData').value) document.getElementById('relManutData').value = todayStr();
     if(!document.getElementById('relChamData').value) document.getElementById('relChamData').value = todayStr();
   }
+  if(btn.dataset.view === 'inspecao' && !document.querySelector('#inspGrid .insp-row')) resetInspecaoGrid();
   if(btn.dataset.view === 'usuarios') renderUsers();
   if(btn.dataset.view === 'dashboard') renderDashboard();
 });
+
+function abrirAba(view){
+  const b = document.querySelector('#tabs button[data-view="' + view + '"]');
+  if(b) b.click();
+}
 
 // ---------- cadastro ----------
 async function cadastrarPeca(){
@@ -1449,11 +1495,12 @@ function situacaoLabelScanner(s){
   return s.situacaoCustom || 'Outro status';
 }
 
-function renderScannerResumo(){
-  const resumo = document.getElementById('scannerResumo');
+function renderScannerResumo(lista, elId){
+  const resumo = document.getElementById(elId || 'scannerResumo');
   if(!resumo) return;
-  const emProducao = scanners.filter(s => (s.situacao || 'producao') === 'producao');
-  const foraProducao = scanners.filter(s => (s.situacao || 'producao') !== 'producao');
+  lista = lista || scanners;
+  const emProducao = lista.filter(s => (s.situacao || 'producao') === 'producao');
+  const foraProducao = lista.filter(s => (s.situacao || 'producao') !== 'producao');
   const porSituacao = {};
   foraProducao.forEach(s => {
     const chave = situacaoLabelScanner(s);
@@ -1472,19 +1519,10 @@ function renderScannerResumo(){
     </div>`;
 }
 
-function renderScanners(){
-  const list = document.getElementById('scannersList');
-  document.getElementById('totalScannersTag').textContent = scanners.length;
-  renderScannerResumo();
-  fillManualScannerSelects();
-  if(!scanners.length){
-    list.innerHTML = `<div class="empty"><span class="glyph">▢</span>Nenhum scanner cadastrado ainda.</div>`;
-    return;
-  }
-  list.innerHTML = scanners.slice().sort((a,b) => a.nome.localeCompare(b.nome)).map(s => {
-    const temChamado = scannerTemChamadoAberto(s.nome);
-    const foraDeOperacao = (s.situacao || 'producao') !== 'producao';
-    return `
+function scannerRowHtml(s){
+  const temChamado = scannerTemChamadoAberto(s.nome);
+  const foraDeOperacao = (s.situacao || 'producao') !== 'producao';
+  return `
     <div class="scanner-row${(temChamado || foraDeOperacao) ? ' alerta' : ''}">
       <div class="nome">${escapeHtml(s.nome)}</div>
       <div class="details">
@@ -1506,7 +1544,128 @@ function renderScanners(){
         <button class="ghost" onclick="excluirScanner('${s.id}')">Excluir</button>
       </div>
     </div>`;
-  }).join('');
+}
+
+function renderScanners(){
+  const list = document.getElementById('scannersList');
+  // "Scanners" = scanners de produção (captura). Os de inspeção ficam na aba "Inspeção".
+  const producao = scanners.filter(s => s.tipo !== 'inspecao');
+  document.getElementById('totalScannersTag').textContent = producao.length;
+  renderScannerResumo(producao, 'scannerResumo');
+  fillManualScannerSelects();
+  if(!producao.length){
+    list.innerHTML = `<div class="empty"><span class="glyph">▢</span>Nenhum scanner cadastrado ainda.</div>`;
+  } else {
+    list.innerHTML = producao.slice().sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR', {numeric:true})).map(scannerRowHtml).join('');
+  }
+  renderInspecao();
+}
+
+// ---------- scanners de inspeção (lançamento em lote) ----------
+const INSP_REGEX = /^inspe[cç][aã]o\s*(\d+)/i;
+
+function renderInspecao(){
+  const list = document.getElementById('inspecaoList');
+  if(!list) return;
+  const insp = scanners.filter(s => s.tipo === 'inspecao');
+  document.getElementById('totalInspecaoTag').textContent = insp.length;
+  renderScannerResumo(insp, 'inspecaoResumo');
+  list.innerHTML = insp.length
+    ? insp.slice().sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR', {numeric:true})).map(scannerRowHtml).join('')
+    : `<div class="empty"><span class="glyph">▢</span>Nenhum scanner de inspeção cadastrado ainda.</div>`;
+  // sugestões de marca/modelo a partir do que já foi cadastrado (captura e inspeção)
+  const uniq = (arr) => [...new Set(arr.map(x => (x || '').trim()).filter(Boolean))].sort((a,b) => a.localeCompare(b, 'pt-BR'));
+  document.getElementById('listaMarcasScanner').innerHTML = uniq(scanners.map(s => s.marca)).map(v => `<option value="${escapeHtml(v)}"></option>`).join('');
+  document.getElementById('listaModelosScanner').innerHTML = uniq(scanners.map(s => s.modelo)).map(v => `<option value="${escapeHtml(v)}"></option>`).join('');
+}
+
+function proximoNumeroInspecao(){
+  let max = 0;
+  scanners.forEach(s => {
+    const m = INSP_REGEX.exec((s.nome || '').trim());
+    if(m) max = Math.max(max, parseInt(m[1], 10));
+  });
+  document.querySelectorAll('#inspGrid .insp-row').forEach(r => {
+    max = Math.max(max, parseInt(r.dataset.num, 10) || 0);
+  });
+  return max + 1;
+}
+
+function addInspecaoLinha(){
+  const n = proximoNumeroInspecao();
+  const prefixo = 'Inspeção ' + String(n).padStart(2, '0') + ' - ';
+  const div = document.createElement('div');
+  div.className = 'insp-row';
+  div.dataset.num = n;
+  div.dataset.prefix = prefixo;
+  div.innerHTML = `
+    <div class="insp-row-head">
+      <b>Inspeção ${String(n).padStart(2, '0')}</b>
+      <button class="ghost" type="button" onclick="this.closest('.insp-row').remove()">Remover</button>
+    </div>
+    <label>Nome / identificação</label>
+    <input class="insp-nome" value="${escapeHtml(prefixo)}">
+    <div class="row">
+      <div>
+        <label>Marca</label>
+        <input class="insp-marca" placeholder="Ex: Kodak, Fujitsu..." list="listaMarcasScanner" autocomplete="off">
+      </div>
+      <div>
+        <label>Modelo</label>
+        <input class="insp-modelo" placeholder="Ex: i2900, fi-7160..." list="listaModelosScanner" autocomplete="off">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Número de série</label>
+        <input class="insp-serie" placeholder="Nº de série do equipamento">
+      </div>
+      <div>
+        <label>Tombo</label>
+        <input class="insp-tombo" placeholder="Nº de tombamento">
+      </div>
+    </div>`;
+  document.getElementById('inspGrid').appendChild(div);
+}
+
+function resetInspecaoGrid(qtd){
+  document.getElementById('inspGrid').innerHTML = '';
+  for(let i = 0; i < (qtd || 5); i++) addInspecaoLinha();
+}
+
+async function salvarInspecaoLote(){
+  const localizacao = document.getElementById('inspLocal').value.trim();
+  const contrato = document.getElementById('inspContrato').value.trim();
+  const garantia = document.getElementById('inspGarantia').value;
+  const linhas = [...document.querySelectorAll('#inspGrid .insp-row')];
+  const novos = [];
+  const nomesUsados = new Set(scanners.map(s => s.nome.toLowerCase()));
+  for(const r of linhas){
+    const nomeBruto = r.querySelector('.insp-nome').value.trim();
+    const marca = r.querySelector('.insp-marca').value.trim();
+    const modelo = r.querySelector('.insp-modelo').value.trim();
+    const numeroSerie = r.querySelector('.insp-serie').value.trim();
+    const patrimonio = r.querySelector('.insp-tombo').value.trim();
+    const intocada = nomeBruto === r.dataset.prefix.trim() && !marca && !modelo && !numeroSerie && !patrimonio;
+    if(intocada) continue;
+    // tira o hífen sobrando quando só marca/modelo foram preenchidos nos campos
+    const nome = nomeBruto.replace(/\s*[-–—]\s*$/, '').trim();
+    if(!nome){ showToast('Há uma linha sem nome', true); return; }
+    if(nomesUsados.has(nome.toLowerCase())){ showToast('Nome repetido: ' + nome, true); return; }
+    nomesUsados.add(nome.toLowerCase());
+    novos.push({ id: uid(), nome, marca, modelo, numeroSerie, patrimonio, localizacao,
+      situacao: 'producao', situacaoCustom: '', localExterno: '', contrato, garantia, obs: '', tipo: 'inspecao' });
+  }
+  if(!novos.length){ showToast('Preencha pelo menos uma linha', true); return; }
+  novos.forEach(n => scanners.push(n));
+  await registrarLocalScannerSeNovo(localizacao);
+  await Promise.all(novos.map(saveScannerDoc));
+  showToast(novos.length + (novos.length === 1 ? ' scanner de inspeção cadastrado' : ' scanners de inspeção cadastrados'));
+  document.getElementById('inspLocal').value = '';
+  document.getElementById('inspContrato').value = '';
+  document.getElementById('inspGarantia').value = '';
+  resetInspecaoGrid();
+  renderScanners();
 }
 
 // Atualiza as sugestões (datalist) de localização com base nos locais já cadastrados
@@ -1608,7 +1767,7 @@ async function salvarScanner(){
     }
     showToast('Scanner atualizado');
   } else {
-    scannerSalvo = { id: uid(), nome, marca, modelo, numeroSerie, patrimonio, localizacao, situacao, situacaoCustom, localExterno, contrato, garantia, obs };
+    scannerSalvo = { id: uid(), nome, marca, modelo, numeroSerie, patrimonio, localizacao, situacao, situacaoCustom, localExterno, contrato, garantia, obs, tipo: 'producao' };
     scanners.push(scannerSalvo);
     showToast('Scanner cadastrado');
   }
@@ -1619,6 +1778,7 @@ async function salvarScanner(){
   await saveScannerDoc(scannerSalvo);
   cancelarEdicaoScanner();
   renderScanners();
+  if(scannerSalvo && scannerSalvo.tipo === 'inspecao') abrirAba('inspecao');
 }
 
 function editarScanner(id){
@@ -1656,6 +1816,8 @@ function editarScanner(id){
   document.getElementById('scannerFormTitle').textContent = 'Editar scanner';
   document.getElementById('scannerSaveBtn').textContent = 'Salvar alterações';
   document.getElementById('scannerCancelBtn').style.display = 'block';
+  abrirAba('scanners');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function cancelarEdicaoScanner(){
@@ -3099,11 +3261,16 @@ function dashRenderDonut(containerId, segmentos){
 // outro local cadastrado no formulário do scanner) e mostra quantos estão
 // funcionando, quantos fora de operação e o total em cada local.
 function renderScannersPorLocal(){
-  const container = document.getElementById('dashScannersPorLocalList');
+  renderScannersPorLocalLista(scanners.filter(s => s.tipo !== 'inspecao'), 'dashScannersPorLocalList', 'dashLocaisTag');
+  renderScannersPorLocalLista(scanners.filter(s => s.tipo === 'inspecao'), 'dashScannersInspPorLocalList', 'dashLocaisInspTag');
+}
+
+function renderScannersPorLocalLista(lista, containerId, tagId){
+  const container = document.getElementById(containerId);
   if(!container) return;
 
   const porLocal = {};
-  scanners.forEach(s => {
+  lista.forEach(s => {
     const local = (s.localizacao || '').trim() || 'Sem local definido';
     if(!porLocal[local]) porLocal[local] = { funcionando:0, foraDeOperacao:0, total:0 };
     porLocal[local].total++;
@@ -3112,7 +3279,7 @@ function renderScannersPorLocal(){
   });
 
   const locais = Object.entries(porLocal).sort((a,b) => a[0].localeCompare(b[0], 'pt-BR'));
-  document.getElementById('dashLocaisTag').textContent = locais.length;
+  document.getElementById(tagId).textContent = locais.length;
 
   container.innerHTML = locais.length
     ? locais.map(([local, info]) => `
