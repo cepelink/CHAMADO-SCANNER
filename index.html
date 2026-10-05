@@ -661,17 +661,21 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
     <div class="card">
       <h2>Lançar scanners de inspeção</h2>
       <div class="hint" style="margin-bottom:8px">Os nomes já vêm preenchidos (Inspeção 01 - , Inspeção 02 - ...). Complete a marca e o modelo de cada um e salve todos de uma vez. Linhas que você não mexer são ignoradas.</div>
-      <label>Localização (vale para todos — opcional)</label>
-      <input id="inspLocal" placeholder="Ex: Recepção - Térreo" list="listaLocaisScanner" autocomplete="off">
-      <div class="row">
-        <div>
-          <label>Contrato (opcional)</label>
-          <input id="inspContrato" placeholder="Ex: Contrato 012/2025">
+      <div class="card" style="background:var(--surface-2);margin-bottom:12px">
+        <div class="hint" style="margin-bottom:8px">Atalho (opcional): preencha e clique em "Aplicar em todas as linhas" para copiar localização, contrato e garantia para todas as linhas abaixo.</div>
+        <label>Localização</label>
+        <input id="inspLocal" placeholder="Ex: Recepção - Térreo" list="listaLocaisScanner" autocomplete="off">
+        <div class="row">
+          <div>
+            <label>Contrato</label>
+            <input id="inspContrato" placeholder="Ex: Contrato 012/2025">
+          </div>
+          <div>
+            <label>Data fim da garantia</label>
+            <input id="inspGarantia" type="date">
+          </div>
         </div>
-        <div>
-          <label>Data fim da garantia (opcional)</label>
-          <input id="inspGarantia" type="date">
-        </div>
+        <button class="ghost" style="margin-top:8px" onclick="aplicarInspecaoEmTodas()">Aplicar em todas as linhas</button>
       </div>
       <datalist id="listaMarcasScanner"></datalist>
       <datalist id="listaModelosScanner"></datalist>
@@ -1591,6 +1595,24 @@ function proximoNumeroInspecao(){
   return max + 1;
 }
 
+function opcoesSituacaoLoteHtml(){
+  const customs = (settings.situacoesCustom || []).slice().sort((a,b) => a.localeCompare(b));
+  return `
+    <option value="producao">Em produção</option>
+    <option value="externo">Fora de operação — enviado para conserto externo</option>
+    ${customs.map(lbl => `<option value="custom:${escapeHtml(lbl)}">${escapeHtml(lbl)}</option>`).join('')}
+    <option value="novo_status">+ Cadastrar novo status...</option>`;
+}
+
+function inspSituacaoChange(sel){
+  const row = sel.closest('.insp-row');
+  row.querySelector('.insp-externo-wrap').style.display = sel.value === 'externo' ? 'block' : 'none';
+  row.querySelector('.insp-novo-wrap').style.display = sel.value === 'novo_status' ? 'block' : 'none';
+}
+function inspExternoChange(sel){
+  sel.closest('.insp-row').querySelector('.insp-externo-outro').style.display = sel.value === 'outro' ? 'block' : 'none';
+}
+
 function addInspecaoLinha(){
   const n = proximoNumeroInspecao();
   const prefixo = 'Inspeção ' + String(n).padStart(2, '0') + ' - ';
@@ -1624,8 +1646,49 @@ function addInspecaoLinha(){
         <label>Tombo</label>
         <input class="insp-tombo" placeholder="Nº de tombamento">
       </div>
-    </div>`;
+    </div>
+    <label>Localização</label>
+    <input class="insp-local" placeholder="Ex: Recepção - Térreo" list="listaLocaisScanner" autocomplete="off">
+    <label>Situação</label>
+    <select class="insp-situacao" onchange="inspSituacaoChange(this)">${opcoesSituacaoLoteHtml()}</select>
+    <div class="insp-novo-wrap" style="display:none;margin-top:8px">
+      <label>Novo status</label>
+      <input class="insp-novo-input" placeholder="Ex: Em manutenção interna, Desativado...">
+    </div>
+    <div class="insp-externo-wrap" style="display:none">
+      <label>Enviado para</label>
+      <select class="insp-externo" onchange="inspExternoChange(this)">
+        <option value="Diagrama - BA">Diagrama - BA</option>
+        <option value="D2J - BA">D2J - BA</option>
+        <option value="outro">Outro...</option>
+      </select>
+      <input class="insp-externo-outro" placeholder="Especifique o local para onde o scanner foi" style="display:none;margin-top:8px">
+    </div>
+    <div class="row">
+      <div>
+        <label>Contrato</label>
+        <input class="insp-contrato" placeholder="Ex: Contrato 012/2025">
+      </div>
+      <div>
+        <label>Data fim da garantia</label>
+        <input class="insp-garantia" type="date">
+      </div>
+    </div>
+    <label>Observações</label>
+    <textarea class="insp-obs" placeholder="Opcional"></textarea>`;
   document.getElementById('inspGrid').appendChild(div);
+}
+
+function aplicarInspecaoEmTodas(){
+  const local = document.getElementById('inspLocal').value.trim();
+  const contrato = document.getElementById('inspContrato').value.trim();
+  const garantia = document.getElementById('inspGarantia').value;
+  document.querySelectorAll('#inspGrid .insp-row').forEach(r => {
+    if(local) r.querySelector('.insp-local').value = local;
+    if(contrato) r.querySelector('.insp-contrato').value = contrato;
+    if(garantia) r.querySelector('.insp-garantia').value = garantia;
+  });
+  showToast('Aplicado em todas as linhas');
 }
 
 function resetInspecaoGrid(qtd){
@@ -1634,31 +1697,56 @@ function resetInspecaoGrid(qtd){
 }
 
 async function salvarInspecaoLote(){
-  const localizacao = document.getElementById('inspLocal').value.trim();
-  const contrato = document.getElementById('inspContrato').value.trim();
-  const garantia = document.getElementById('inspGarantia').value;
   const linhas = [...document.querySelectorAll('#inspGrid .insp-row')];
   const novos = [];
+  const statusNovos = new Set();
   const nomesUsados = new Set(scanners.map(s => s.nome.toLowerCase()));
   for(const r of linhas){
-    const nomeBruto = r.querySelector('.insp-nome').value.trim();
-    const marca = r.querySelector('.insp-marca').value.trim();
-    const modelo = r.querySelector('.insp-modelo').value.trim();
-    const numeroSerie = r.querySelector('.insp-serie').value.trim();
-    const patrimonio = r.querySelector('.insp-tombo').value.trim();
-    const intocada = nomeBruto === r.dataset.prefix.trim() && !marca && !modelo && !numeroSerie && !patrimonio;
+    const q = (c) => r.querySelector(c);
+    const nomeBruto = q('.insp-nome').value.trim();
+    const marca = q('.insp-marca').value.trim();
+    const modelo = q('.insp-modelo').value.trim();
+    const numeroSerie = q('.insp-serie').value.trim();
+    const patrimonio = q('.insp-tombo').value.trim();
+    const localizacao = q('.insp-local').value.trim();
+    const situacaoSel = q('.insp-situacao').value;
+    const contrato = q('.insp-contrato').value.trim();
+    const garantia = q('.insp-garantia').value;
+    const obs = q('.insp-obs').value.trim();
+    const intocada = nomeBruto === r.dataset.prefix.trim() && !marca && !modelo && !numeroSerie && !patrimonio
+      && !localizacao && !contrato && !garantia && !obs && situacaoSel === 'producao';
     if(intocada) continue;
     // tira o hífen sobrando quando só marca/modelo foram preenchidos nos campos
     const nome = nomeBruto.replace(/\s*[-–—]\s*$/, '').trim();
     if(!nome){ showToast('Há uma linha sem nome', true); return; }
     if(nomesUsados.has(nome.toLowerCase())){ showToast('Nome repetido: ' + nome, true); return; }
     nomesUsados.add(nome.toLowerCase());
+
+    let situacao = situacaoSel, situacaoCustom = '', localExterno = '';
+    if(situacaoSel === 'externo'){
+      const selLocal = q('.insp-externo').value;
+      localExterno = selLocal === 'outro' ? q('.insp-externo-outro').value.trim() : selLocal;
+      if(!localExterno){ showToast('Informe para onde o scanner "' + nome + '" foi enviado', true); return; }
+    } else if(situacaoSel === 'novo_status'){
+      situacaoCustom = q('.insp-novo-input').value.trim();
+      if(!situacaoCustom){ showToast('Digite o novo status de "' + nome + '"', true); return; }
+      situacao = 'custom';
+      statusNovos.add(situacaoCustom);
+    } else if(situacaoSel.startsWith('custom:')){
+      situacao = 'custom';
+      situacaoCustom = situacaoSel.slice(7);
+    }
     novos.push({ id: uid(), nome, marca, modelo, numeroSerie, patrimonio, localizacao,
-      situacao: 'producao', situacaoCustom: '', localExterno: '', contrato, garantia, obs: '', tipo: 'inspecao' });
+      situacao, situacaoCustom, localExterno, contrato, garantia, obs, tipo: 'inspecao' });
   }
   if(!novos.length){ showToast('Preencha pelo menos uma linha', true); return; }
   novos.forEach(n => scanners.push(n));
-  await registrarLocalScannerSeNovo(localizacao);
+  for(const lbl of statusNovos){
+    const existe = (settings.situacoesCustom || []).some(l => l.toLowerCase() === lbl.toLowerCase());
+    if(!existe){ settings.situacoesCustom.push(lbl); await saveSettings(); }
+  }
+  renderOpcoesSituacaoScanner();
+  for(const loc of new Set(novos.map(n => n.localizacao).filter(Boolean))) await registrarLocalScannerSeNovo(loc);
   await Promise.all(novos.map(saveScannerDoc));
   showToast(novos.length + (novos.length === 1 ? ' scanner de inspeção cadastrado' : ' scanners de inspeção cadastrados'));
   document.getElementById('inspLocal').value = '';
