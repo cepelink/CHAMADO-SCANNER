@@ -538,6 +538,25 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
       <div id="dashScannersInspPorLocalList"></div>
     </div>
 
+    <div class="dash-grid">
+      <div class="card">
+        <h2>Captura — fora de operação <span class="tag" id="dashCapForaTag">0</span></h2>
+        <div id="dashCapForaList"></div>
+      </div>
+      <div class="card">
+        <h2>Captura — reserva <span class="tag" id="dashCapReservaTag">0</span></h2>
+        <div id="dashCapReservaList"></div>
+      </div>
+      <div class="card">
+        <h2>Inspeção — fora de operação <span class="tag" id="dashInspForaTag">0</span></h2>
+        <div id="dashInspForaList"></div>
+      </div>
+      <div class="card">
+        <h2>Inspeção — reserva <span class="tag" id="dashInspReservaTag">0</span></h2>
+        <div id="dashInspReservaList"></div>
+      </div>
+    </div>
+
     <div class="card">
       <h2>Scanners que precisam de atenção <span class="tag" id="dashScannersAlertaTag">0</span></h2>
       <div id="dashScannersAlertaList"></div>
@@ -1497,6 +1516,15 @@ function situacaoLabelScanner(s){
   if(!s.situacao || s.situacao === 'producao') return 'Em produção';
   if(s.situacao === 'externo') return 'Fora de operação' + (s.localExterno ? ' — ' + s.localExterno : '');
   return s.situacaoCustom || 'Outro status';
+}
+
+// Classifica o scanner em: 'producao' (funcionando), 'reserva' (status personalizado
+// com "reserva" no nome) ou 'fora' (fora de operação: conserto externo e demais status)
+function scannerGrupo(s){
+  const sit = s.situacao || 'producao';
+  if(sit === 'producao') return 'producao';
+  if(sit !== 'externo' && /reserva/i.test(s.situacaoCustom || '')) return 'reserva';
+  return 'fora';
 }
 
 function renderScannerResumo(lista, elId){
@@ -3360,9 +3388,11 @@ function renderScannersPorLocalLista(lista, containerId, tagId){
   const porLocal = {};
   lista.forEach(s => {
     const local = (s.localizacao || '').trim() || 'Sem local definido';
-    if(!porLocal[local]) porLocal[local] = { funcionando:0, foraDeOperacao:0, total:0 };
+    if(!porLocal[local]) porLocal[local] = { funcionando:0, reserva:0, foraDeOperacao:0, total:0 };
     porLocal[local].total++;
-    if((s.situacao || 'producao') === 'producao') porLocal[local].funcionando++;
+    const g = scannerGrupo(s);
+    if(g === 'producao') porLocal[local].funcionando++;
+    else if(g === 'reserva') porLocal[local].reserva++;
     else porLocal[local].foraDeOperacao++;
   });
 
@@ -3378,10 +3408,40 @@ function renderScannersPorLocalLista(lista, containerId, tagId){
         </div>
         <div class="problem">
           <span style="color:var(--green);font-weight:700">${info.funcionando} funcionando</span>
+          ${info.reserva ? ` · <span style="color:var(--cyan);font-weight:700">${info.reserva} reserva</span>` : ''}
           ${info.foraDeOperacao ? ` · <span style="color:var(--red);font-weight:700">${info.foraDeOperacao} fora de operação</span>` : ''}
         </div>
       </div>`).join('')
     : `<div class="empty"><span class="glyph">📍</span>Nenhum scanner cadastrado ainda.</div>`;
+}
+
+// Listas separadas: fora de operação e reserva, para captura e inspeção
+function renderScannersSeparados(){
+  const blocos = [
+    { tipo:'producao', grupo:'fora',    list:'dashCapForaList',      tag:'dashCapForaTag',      vazio:'Nenhum scanner de captura fora de operação.' },
+    { tipo:'producao', grupo:'reserva', list:'dashCapReservaList',   tag:'dashCapReservaTag',   vazio:'Nenhum scanner de captura em reserva.' },
+    { tipo:'inspecao', grupo:'fora',    list:'dashInspForaList',     tag:'dashInspForaTag',     vazio:'Nenhum scanner de inspeção fora de operação.' },
+    { tipo:'inspecao', grupo:'reserva', list:'dashInspReservaList',  tag:'dashInspReservaTag',  vazio:'Nenhum scanner de inspeção em reserva.' }
+  ];
+  blocos.forEach(b => {
+    const lista = scanners
+      .filter(s => (b.tipo === 'inspecao') === (s.tipo === 'inspecao') && scannerGrupo(s) === b.grupo)
+      .sort((a,c) => (a.nome || '').localeCompare(c.nome || '', 'pt-BR', { numeric:true }));
+    const tagEl = document.getElementById(b.tag);
+    const listEl = document.getElementById(b.list);
+    if(!tagEl || !listEl) return;
+    tagEl.textContent = lista.length;
+    listEl.innerHTML = lista.length
+      ? lista.map(s => `
+        <div class="list-item">
+          <div class="top-row">
+            <span class="scanner">${escapeHtml(s.nome)}</span>
+            <span class="status-pill ${b.grupo === 'reserva' ? 'status-preventiva' : 'status-aberto'}">${escapeHtml(situacaoLabelScanner(s))}</span>
+          </div>
+          ${s.localizacao ? `<div class="problem">${escapeHtml(s.localizacao)}</div>` : ''}
+        </div>`).join('')
+      : `<div class="empty"><span class="glyph">✓</span>${b.vazio}</div>`;
+  });
 }
 
 function renderDashboard(){
@@ -3392,7 +3452,7 @@ function renderDashboard(){
   document.getElementById('kpiChamadosAbertos').textContent = chamadosAbertos.length;
 
   const scannersAlerta = scanners.filter(s =>
-    (s.situacao || 'producao') !== 'producao' || scannerTemChamadoAberto(s.nome)
+    scannerGrupo(s) === 'fora' || scannerTemChamadoAberto(s.nome)
   );
   document.getElementById('kpiScannersAlerta').textContent = scannersAlerta.length;
 
@@ -3445,6 +3505,7 @@ function renderDashboard(){
 
   // ---- Lista: scanners funcionando por local (Cone, CEPE-Sede ou qualquer outro cadastrado) ----
   renderScannersPorLocal();
+  renderScannersSeparados();
 
   // ---- Lista: scanners que precisam de atenção ----
   document.getElementById('dashScannersAlertaTag').textContent = scannersAlerta.length;
