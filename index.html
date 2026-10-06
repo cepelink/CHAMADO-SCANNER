@@ -1969,16 +1969,39 @@ function conteudoQrScanner(s){
   // A 1ª linha (SCANNER:id) é usada pelo app para reconhecer o equipamento ao bipar.
   // As linhas seguintes ficam gravadas dentro do próprio QR Code e podem ser lidas
   // por qualquer leitor de QR (inclusive fora do app).
+  // O texto do QR é gravado só com caracteres ASCII (sem acentos): a biblioteca de QR
+  // calcula errado o tamanho com acentos/traços longos e estoura ("code length overflow").
+  const asc = (v) => String(v || '-').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7E]/g, '-').trim() || '-';
   const linhas = [
     'SCANNER:' + s.id,
-    'NOME: ' + (s.nome || '—'),
-    'MARCA: ' + (s.marca || '—'),
-    'MODELO: ' + (s.modelo || '—'),
-    'NUMERO DE SERIE: ' + (s.numeroSerie || '—'),
-    'TOMBO: ' + (s.patrimonio || '—')
+    'NOME: ' + asc(s.nome),
+    'MARCA: ' + asc(s.marca),
+    'MODELO: ' + asc(s.modelo),
+    'NUMERO DE SERIE: ' + asc(s.numeroSerie),
+    'TOMBO: ' + asc(s.patrimonio)
   ];
-  if(s.localizacao) linhas.push('LOCAL: ' + s.localizacao);
+  if(s.localizacao) linhas.push('LOCAL: ' + asc(s.localizacao));
   return linhas.join('\n');
+}
+
+// Gera o QR com tolerância a erro: tenta nível M, depois L, depois só o essencial
+function gerarQrEm(div, s){
+  const essencial = 'SCANNER:' + s.id + '\nNOME: ' + String(s.nome || '-').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7E]/g, '-');
+  const tentativas = [
+    [conteudoQrScanner(s), QRCode.CorrectLevel.M],
+    [conteudoQrScanner(s), QRCode.CorrectLevel.L],
+    [essencial, QRCode.CorrectLevel.L],
+    ['SCANNER:' + s.id, QRCode.CorrectLevel.L]
+  ];
+  let ultimoErro;
+  for(const [texto, nivel] of tentativas){
+    try{
+      div.innerHTML = '';
+      new QRCode(div, { text: texto, width: 260, height: 260, correctLevel: nivel });
+      return;
+    }catch(e){ ultimoErro = e; }
+  }
+  throw ultimoErro;
 }
 
 function imprimirQrScanner(id){
@@ -1988,7 +2011,7 @@ function imprimirQrScanner(id){
     const tempDiv = document.createElement('div');
     tempDiv.style.cssText = 'position:fixed;left:-9999px;top:0;';
     document.body.appendChild(tempDiv);
-    new QRCode(tempDiv, { text: conteudoQrScanner(s), width: 260, height: 260, correctLevel: QRCode.CorrectLevel.M });
+    gerarQrEm(tempDiv, s);
 
     setTimeout(() => {
       try{
