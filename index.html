@@ -1983,21 +1983,22 @@ function conteudoQrScanner(s){
 
 function imprimirQrScanner(id){
   const s = scanners.find(x => x.id === id);
-  if(!s) return;
-  const tempDiv = document.createElement('div');
-  tempDiv.style.display = 'none';
-  document.body.appendChild(tempDiv);
-  new QRCode(tempDiv, { text: conteudoQrScanner(s), width: 260, height: 260, correctLevel: QRCode.CorrectLevel.M });
+  if(!s){ showToast('Scanner não encontrado', true); return; }
+  try{
+    const tempDiv = document.createElement('div');
+    tempDiv.style.cssText = 'position:fixed;left:-9999px;top:0;';
+    document.body.appendChild(tempDiv);
+    new QRCode(tempDiv, { text: conteudoQrScanner(s), width: 260, height: 260, correctLevel: QRCode.CorrectLevel.M });
 
-  setTimeout(() => {
-    const canvas = tempDiv.querySelector('canvas');
-    const img = tempDiv.querySelector('img');
-    const imgSrc = canvas ? canvas.toDataURL('image/png') : (img ? img.src : '');
-    document.body.removeChild(tempDiv);
+    setTimeout(() => {
+      try{
+        const canvas = tempDiv.querySelector('canvas');
+        const img = tempDiv.querySelector('img');
+        const imgSrc = canvas ? canvas.toDataURL('image/png') : (img ? img.src : '');
+        document.body.removeChild(tempDiv);
+        if(!imgSrc){ showToast('Não foi possível gerar o QR Code', true); return; }
 
-    const win = window.open('', '_blank');
-    if(!win){ showToast('Permita pop-ups para imprimir o QR Code', true); return; }
-    win.document.write(`
+        const html = `
       <!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
       <title>QR Code - ${escapeHtml(s.nome)}</title>
       <style>
@@ -2019,11 +2020,31 @@ function imprimirQrScanner(id){
           <div><b>Contrato:</b> ${escapeHtml(s.contrato || '—')}</div>
           <div><b>Garantia até:</b> ${s.garantia ? fmtDataSimples(s.garantia) : '—'}</div>
         </div>
-        <script>window.onload = function(){ window.print(); };<\/script>
-      </body></html>
-    `);
-    win.document.close();
-  }, 200);
+      </body></html>`;
+
+        // Imprime numa moldura oculta da própria página (não depende de pop-up)
+        const antigo = document.getElementById('qrPrintFrame');
+        if(antigo) antigo.remove();
+        const frame = document.createElement('iframe');
+        frame.id = 'qrPrintFrame';
+        frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;';
+        document.body.appendChild(frame);
+        const doc = frame.contentWindow.document;
+        doc.open(); doc.write(html); doc.close();
+        const imprimir = () => {
+          try{ frame.contentWindow.focus(); frame.contentWindow.print(); }
+          catch(e){ showToast('Erro ao abrir a impressão: ' + e.message, true); }
+        };
+        const imgEl = doc.querySelector('img');
+        if(imgEl && !imgEl.complete) imgEl.onload = () => setTimeout(imprimir, 100);
+        else setTimeout(imprimir, 150);
+      }catch(e){
+        showToast('Erro ao imprimir o QR Code: ' + e.message, true);
+      }
+    }, 200);
+  }catch(e){
+    showToast('Erro ao gerar o QR Code: ' + e.message, true);
+  }
 }
 
 // ---------- leitura de QR Code via câmera ----------
