@@ -790,12 +790,22 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
       </div>
 
       <div id="manutCorretivaBox" style="display:none">
-        <label style="margin-top:14px">Peça que quebrou</label>
-        <select id="manutPecaQuebrada"></select>
-        <div class="hint" style="margin-top:-8px;margin-bottom:8px">Se a peça não estiver cadastrada no estoque, descreva no campo de observação abaixo.</div>
+        <label style="margin-top:14px">Peças / consumíveis do estoque</label>
+        <select id="manutPecaCorr"></select>
         <label>Quantidade</label>
-        <input id="manutQtdCorretiva" type="number" min="1" value="1">
-        <label>Custo (R$)</label>
+        <input id="manutQtdCorr" type="number" min="1" value="1">
+        <button class="ghost" type="button" onclick="adicionarItemManutCorr()">+ Adicionar do estoque</button>
+        <div id="manutItensCorrList" style="margin-top:10px"></div>
+
+        <label style="margin-top:14px">Peça fora do estoque (descrever)</label>
+        <input id="manutAvulsaNome" placeholder="Ex: Rolo de tração (não cadastrado)">
+        <label>Quantidade</label>
+        <input id="manutAvulsaQtd" type="number" min="1" value="1">
+        <button class="ghost" type="button" onclick="adicionarPecaAvulsaManut()">+ Adicionar peça avulsa</button>
+        <div class="hint" style="margin-top:6px">Peças avulsas ficam registradas na manutenção, mas não dão baixa no estoque.</div>
+        <div id="manutAvulsasList" style="margin-top:10px"></div>
+
+        <label style="margin-top:14px">Custo (R$)</label>
         <input id="manutCusto" type="number" min="0" step="0.01" placeholder="Ex: 350.00">
       </div>
 
@@ -1210,6 +1220,8 @@ let qrScannerAlvo = null; // 'troca' ou 'chamado' — campo que vai receber o re
 let chScannerSnapshot = null; // guarda os dados completos do scanner bipado/selecionado para o chamado
 let manutScannerSnapshot = null; // idem, para a tela de manutenção
 let manutItens = []; // lista temporária de itens (consumíveis) da manutenção preventiva antes de salvar
+let manutItensCorr = []; // peças/consumíveis do estoque trocados na corretiva (várias) antes de salvar
+let manutAvulsas = []; // peças fora do estoque (só descrição + qtd) da corretiva, sem baixa
 
 // ---------- storage helpers (Firestore — dados compartilhados entre todos os usuários) ----------
 async function loadUsersAndBoot(){
@@ -2241,7 +2253,7 @@ function fillPecaSelects(){
   document.getElementById('entPeca').innerHTML = parts.length ? opts : empty;
   document.getElementById('trocaPeca').innerHTML = parts.length ? opts : empty;
   document.getElementById('manutPeca').innerHTML = parts.length ? opts : empty;
-  document.getElementById('manutPecaQuebrada').innerHTML = '<option value="">Não cadastrada / não aplicável</option>' + opts;
+  document.getElementById('manutPecaCorr').innerHTML = parts.length ? opts : empty;
 }
 
 // ---------- entrada ----------
@@ -2373,6 +2385,79 @@ function renderManutItens(){
     </div>`).join('');
 }
 
+function adicionarItemManutCorr(){
+  const partId = document.getElementById('manutPecaCorr').value;
+  const qtd = parseInt(document.getElementById('manutQtdCorr').value) || 0;
+  if(!partId){ showToast('Selecione uma peça', true); return; }
+  if(qtd <= 0){ showToast('Informe uma quantidade válida', true); return; }
+  const part = parts.find(p => p.id === partId);
+  const existente = manutItensCorr.find(i => i.partId === partId);
+  if(existente){ existente.qtd += qtd; }
+  else { manutItensCorr.push({ partId, partNome: part.nome, qtd }); }
+  document.getElementById('manutQtdCorr').value = 1;
+  renderManutItensCorr();
+}
+
+function removerItemManutCorr(partId){
+  manutItensCorr = manutItensCorr.filter(i => i.partId !== partId);
+  renderManutItensCorr();
+}
+
+function renderManutItensCorr(){
+  const box = document.getElementById('manutItensCorrList');
+  if(!box) return;
+  box.innerHTML = manutItensCorr.map(i => `
+    <div class="list-item" style="padding:8px 10px">
+      <div class="top-row">
+        <span>${escapeHtml(i.partNome)}</span>
+        <span style="display:flex;align-items:center;gap:8px">
+          <span class="num" style="font-weight:700">-${i.qtd}</span>
+          <button class="ghost" style="padding:2px 8px" type="button" onclick="removerItemManutCorr('${i.partId}')">✕</button>
+        </span>
+      </div>
+    </div>`).join('');
+}
+
+function adicionarPecaAvulsaManut(){
+  const nome = document.getElementById('manutAvulsaNome').value.trim();
+  const qtd = parseInt(document.getElementById('manutAvulsaQtd').value) || 0;
+  if(!nome){ showToast('Descreva a peça', true); return; }
+  if(qtd <= 0){ showToast('Informe uma quantidade válida', true); return; }
+  const existente = manutAvulsas.find(a => a.nome.toLowerCase() === nome.toLowerCase());
+  if(existente){ existente.qtd += qtd; }
+  else { manutAvulsas.push({ nome, qtd }); }
+  document.getElementById('manutAvulsaNome').value = '';
+  document.getElementById('manutAvulsaQtd').value = 1;
+  renderManutAvulsas();
+}
+
+function removerPecaAvulsaManut(idx){
+  manutAvulsas.splice(idx, 1);
+  renderManutAvulsas();
+}
+
+function renderManutAvulsas(){
+  const box = document.getElementById('manutAvulsasList');
+  if(!box) return;
+  box.innerHTML = manutAvulsas.map((a, idx) => `
+    <div class="list-item" style="padding:8px 10px">
+      <div class="top-row">
+        <span>${escapeHtml(a.nome)} <span class="hint">(fora do estoque)</span></span>
+        <span style="display:flex;align-items:center;gap:8px">
+          <span class="num" style="font-weight:700">×${a.qtd}</span>
+          <button class="ghost" style="padding:2px 8px" type="button" onclick="removerPecaAvulsaManut(${idx})">✕</button>
+        </span>
+      </div>
+    </div>`).join('');
+}
+
+// Texto único com todas as peças de uma manutenção (estoque + avulsas)
+function fmtItensManut(m){
+  const est = (m.itens || []).map(i => `${escapeHtml(i.partNome)} (-${i.qtd})`);
+  const avu = (m.pecasAvulsas || []).map(a => `${escapeHtml(a.nome)} (×${a.qtd}, fora do estoque)`);
+  return est.concat(avu).join(', ');
+}
+
 async function lancarManutencao(){
   const btn = document.getElementById('manutSaveBtn');
   const hint = document.getElementById('manutHint');
@@ -2384,6 +2469,7 @@ async function lancarManutencao(){
   if(!dataInput){ showToast('Informe a data', true); return; }
 
   let itens = [];
+  let pecasAvulsas = [];
   let custo = null;
 
   if(tipo === 'preventiva'){
@@ -2398,19 +2484,18 @@ async function lancarManutencao(){
       }
     }
   } else {
-    const partId = document.getElementById('manutPecaQuebrada').value;
-    const qtd = parseInt(document.getElementById('manutQtdCorretiva').value) || 1;
     const custoInput = document.getElementById('manutCusto').value.trim();
     custo = custoInput ? parseFloat(custoInput) : null;
-    if(partId){
-      const part = parts.find(p => p.id === partId);
-      if(part && qtd > part.qtd){
-        hint.textContent = `Estoque insuficiente: disponível ${part.qtd}.`;
-        showToast('Estoque insuficiente para essa peça', true);
+    itens = manutItensCorr.slice();
+    for(const it of itens){
+      const part = parts.find(p => p.id === it.partId);
+      if(!part || it.qtd > part.qtd){
+        hint.textContent = `Estoque insuficiente para ${it.partNome}${part ? ' (disponível ' + part.qtd + ')' : ''}.`;
+        showToast('Estoque insuficiente para um dos itens', true);
         return;
       }
-      itens = [{ partId, partNome: part.nome, qtd }];
     }
+    pecasAvulsas = manutAvulsas.slice();
   }
 
   // Usa o snapshot capturado ao bipar o QR; se digitado à mão e bater com
@@ -2432,7 +2517,7 @@ async function lancarManutencao(){
   const [ano, mes, dia] = dataInput.split('-').map(Number);
   const dataManut = new Date(ano, mes - 1, dia, agora.getHours(), agora.getMinutes());
 
-  const maintenance = { id: uid(), tipo, scanner, scannerInfo, itens, custo, obs, data: dataManut.toISOString() };
+  const maintenance = { id: uid(), tipo, scanner, scannerInfo, itens, pecasAvulsas, custo, obs, data: dataManut.toISOString() };
 
   btn.disabled = true;
   try{
@@ -2463,10 +2548,15 @@ async function lancarManutencao(){
 
   manutItens = [];
   renderManutItens();
+  manutItensCorr = [];
+  manutAvulsas = [];
+  renderManutItensCorr();
+  renderManutAvulsas();
   document.getElementById('manutData').value = todayStr();
   document.getElementById('manutObs').value = '';
   document.getElementById('manutCusto').value = '';
-  document.getElementById('manutQtdCorretiva').value = 1;
+  document.getElementById('manutQtdCorr').value = 1;
+  document.getElementById('manutAvulsaQtd').value = 1;
   showToast(tipo === 'preventiva' ? 'Manutenção preventiva registrada' : 'Manutenção corretiva registrada');
   fillPecaSelects();
   renderAll();
@@ -3097,9 +3187,7 @@ function renderManutList(){
   const ordenadas = maintenances.slice().sort((a,b)=> new Date(b.data) - new Date(a.data));
   list.innerHTML = ordenadas.map(m => {
     const tipoLabel = m.tipo === 'preventiva' ? 'Preventiva' : 'Corretiva';
-    const itensTxt = m.itens && m.itens.length
-      ? m.itens.map(i => `${escapeHtml(i.partNome)} (-${i.qtd})`).join(', ')
-      : '';
+    const itensTxt = fmtItensManut(m);
     return `
     <div class="list-item">
       <div class="top-row">
@@ -3136,12 +3224,14 @@ function imprimirManutencao(id){
   document.getElementById('manutPrintScannerInfo').innerHTML = scannerInfoHtml
     || `<div class="hint">Sem dados adicionais cadastrados para este scanner.</div>`;
 
-  if(m.itens && m.itens.length){
-    const linhas = m.itens.map(i => `<tr><td>${escapeHtml(i.partNome)}</td><td class="num">${i.qtd}</td></tr>`).join('');
+  const avulsasPrint = m.pecasAvulsas || [];
+  if((m.itens && m.itens.length) || avulsasPrint.length){
+    const linhas = (m.itens || []).map(i => `<tr><td>${escapeHtml(i.partNome)}</td><td class="num">${i.qtd}</td></tr>`).join('')
+      + avulsasPrint.map(a => `<tr><td>${escapeHtml(a.nome)} <em>(fora do estoque)</em></td><td class="num">${a.qtd}</td></tr>`).join('');
     document.getElementById('manutPrintItens').innerHTML =
       `<table><thead><tr><th>Peça</th><th style="text-align:right">Qtd.</th></tr></thead><tbody>${linhas}</tbody></table>`;
   } else {
-    document.getElementById('manutPrintItens').innerHTML = `<div class="hint">Nenhum item de estoque vinculado a esta manutenção.</div>`;
+    document.getElementById('manutPrintItens').innerHTML = `<div class="hint">Nenhuma peça registrada nesta manutenção.</div>`;
   }
 
   document.getElementById('manutPrintCusto').innerHTML = m.custo != null
@@ -3795,7 +3885,10 @@ function gerarRelatorioManutencao(){
 
   // resumo de consumíveis trocados nas preventivas
   const porPeca = {};
-  preventivas.forEach(m => (m.itens || []).forEach(it => { porPeca[it.partNome] = (porPeca[it.partNome] || 0) + it.qtd; }));
+  registros.forEach(m => {
+    (m.itens || []).forEach(it => { porPeca[it.partNome] = (porPeca[it.partNome] || 0) + it.qtd; });
+    (m.pecasAvulsas || []).forEach(a => { const k = a.nome + ' (fora do estoque)'; porPeca[k] = (porPeca[k] || 0) + a.qtd; });
+  });
   const linhasPeca = Object.entries(porPeca).sort((a,b) => b[1]-a[1])
     .map(([nome,qtd]) => `<tr><td>${escapeHtml(nome)}</td><td class="num"><span class="qty-badge low">${qtd}</span></td></tr>`).join('');
 
@@ -3806,7 +3899,7 @@ function gerarRelatorioManutencao(){
       · Corretivas: <strong style="color:var(--text)">${corretivas.length}</strong>
       · Custo total (corretivas): <strong style="color:var(--text)">R$ ${custoTotal.toLocaleString('pt-BR', {minimumFractionDigits:2})}</strong>
     </div>
-    ${linhasPeca ? `<h2 style="margin-top:16px">Consumíveis trocados (preventivas)</h2>
+    ${linhasPeca ? `<h2 style="margin-top:16px">Peças e consumíveis trocados</h2>
     <table><thead><tr><th>Peça</th><th style="text-align:right">Qtd. trocada</th></tr></thead><tbody>${linhasPeca}</tbody></table>` : ''}
   `;
 
@@ -3814,7 +3907,7 @@ function gerarRelatorioManutencao(){
     <h2 style="margin-top:16px">Detalhamento</h2>
     ${registros.map(m => {
       const tipoLbl = m.tipo === 'preventiva' ? 'Preventiva' : 'Corretiva';
-      const itensTxt = m.itens && m.itens.length ? m.itens.map(i => `${escapeHtml(i.partNome)} (-${i.qtd})`).join(', ') : '';
+      const itensTxt = fmtItensManut(m);
       return `
       <div class="list-item">
         <div class="top-row">
