@@ -795,6 +795,7 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
         <input id="manutQtd" type="number" min="1" value="1">
         <button class="ghost" type="button" onclick="adicionarItemManutencao()">+ Adicionar item à lista</button>
         <div id="manutItensList" style="margin-top:10px"></div>
+        <div class="hint" style="margin-top:6px">Se não houve troca de consumíveis, deixe a lista vazia e preencha só a observação.</div>
       </div>
 
       <div id="manutCorretivaBox" style="display:none">
@@ -2500,7 +2501,8 @@ async function lancarManutencao(){
   let custo = null;
 
   if(tipo === 'preventiva'){
-    if(!manutItens.length){ showToast('Adicione ao menos um item à lista', true); return; }
+    // preventiva sem troca de consumíveis é permitida, desde que tenha observação
+    if(!manutItens.length && !obs){ showToast('Adicione um item à lista ou preencha a observação', true); return; }
     itens = manutItens.slice();
     for(const it of itens){
       const part = parts.find(p => p.id === it.partId);
