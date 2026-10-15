@@ -671,6 +671,11 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
       <h2>Scanners cadastrados <span class="tag" id="totalScannersTag">0</span></h2>
       <div class="hint" style="margin-bottom:8px">Cada scanner tem um QR Code próprio, com marca, modelo, número de série e tombo gravados dentro do código. Imprima e cole no equipamento — na hora da troca, o funcionário só bipa o código.</div>
       <div class="scanner-resumo" id="scannerResumo"></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0">
+        <label for="scannerFiltroContrato" style="margin:0">Filtrar por contrato</label>
+        <select id="scannerFiltroContrato" onchange="renderScanners()" style="max-width:280px"></select>
+        <span class="hint" id="scannerFiltroInfo" style="margin:0"></span>
+      </div>
       <div id="scannersList"></div>
     </div>
   </section>
@@ -1597,10 +1602,29 @@ function renderScanners(){
   document.getElementById('totalScannersTag').textContent = producao.length;
   renderScannerResumo(producao, 'scannerResumo');
   fillManualScannerSelects();
+
+  // filtro por contrato
+  const selC = document.getElementById('scannerFiltroContrato');
+  const atual = selC.value;
+  const contratos = [...new Set(producao.map(s => (s.contrato || '').trim()).filter(Boolean))]
+    .sort((a,b) => a.localeCompare(b, 'pt-BR', {numeric:true}));
+  const contar = (fn) => producao.filter(fn).length;
+  selC.innerHTML = `<option value="">Todos os contratos (${producao.length})</option>`
+    + contratos.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)} (${contar(s => (s.contrato || '').trim() === c)})</option>`).join('')
+    + `<option value="__sem__">Sem contrato (${contar(s => !(s.contrato || '').trim())})</option>`;
+  selC.value = [...selC.options].some(o => o.value === atual) ? atual : '';
+  const filtro = selC.value;
+  const filtrados = !filtro ? producao
+    : filtro === '__sem__' ? producao.filter(s => !(s.contrato || '').trim())
+    : producao.filter(s => (s.contrato || '').trim() === filtro);
+  document.getElementById('scannerFiltroInfo').textContent = filtro ? `Mostrando ${filtrados.length} de ${producao.length}` : '';
+
   if(!producao.length){
     list.innerHTML = `<div class="empty"><span class="glyph">▢</span>Nenhum scanner cadastrado ainda.</div>`;
+  } else if(!filtrados.length){
+    list.innerHTML = `<div class="empty"><span class="glyph">▢</span>Nenhum scanner neste contrato.</div>`;
   } else {
-    list.innerHTML = producao.slice().sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR', {numeric:true})).map(scannerRowHtml).join('');
+    list.innerHTML = filtrados.slice().sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR', {numeric:true})).map(scannerRowHtml).join('');
   }
   renderInspecao();
 }
