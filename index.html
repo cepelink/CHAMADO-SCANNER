@@ -371,6 +371,9 @@
     .view.active{ display:block !important; }
     #view-relatorio .card{ border:none; padding:0; background:#fff; }
     .print-only{ display:block; }
+    /* Relatório: imprime só o relatório cujo botão foi clicado */
+    #view-relatorio.printing-one .card{ display:none !important; }
+    #view-relatorio.printing-one .card.print-target{ display:block !important; }
     /* A logo fica só no cabeçalho da 1ª página (fluxo normal), não mais fixa
        em todas as páginas — era isso que sobrepunha o conteúdo a partir da 2ª página. */
     .print-header{ position:relative; border-bottom:2px solid #111; padding-bottom:10px; margin-bottom:16px; padding-right:56px; }
@@ -896,7 +899,7 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
         <div class="print-meta" id="relPrintMeta"></div>
       </div>
       <h2>Resultado <span class="tag" id="relPeriodoTag"></span></h2>
-      <button class="ghost no-print" style="margin-bottom:12px" onclick="window.print()">🖨 Imprimir / Salvar em PDF</button>
+      <button class="ghost no-print" style="margin-bottom:12px" onclick="imprimirRelatorio(this)">🖨 Imprimir / Salvar em PDF</button>
       <div id="relResumo"></div>
       <div id="relDetalhe" style="margin-top:10px"></div>
     </div>
@@ -930,7 +933,7 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
         <div class="print-meta" id="relManutPrintMeta"></div>
       </div>
       <h2>Resultado <span class="tag" id="relManutPeriodoTag"></span></h2>
-      <button class="ghost no-print" style="margin-bottom:12px" onclick="window.print()">🖨 Imprimir / Salvar em PDF</button>
+      <button class="ghost no-print" style="margin-bottom:12px" onclick="imprimirRelatorio(this)">🖨 Imprimir / Salvar em PDF</button>
       <div id="relManutResumo"></div>
       <div id="relManutDetalhe" style="margin-top:10px"></div>
     </div>
@@ -964,7 +967,7 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
         <div class="print-meta" id="relChamPrintMeta"></div>
       </div>
       <h2>Resultado <span class="tag" id="relChamPeriodoTag"></span></h2>
-      <button class="ghost no-print" style="margin-bottom:12px" onclick="window.print()">🖨 Imprimir / Salvar em PDF</button>
+      <button class="ghost no-print" style="margin-bottom:12px" onclick="imprimirRelatorio(this)">🖨 Imprimir / Salvar em PDF</button>
       <div id="relChamResumo"></div>
       <div id="relChamDetalhe" style="margin-top:10px"></div>
     </div>
@@ -3764,6 +3767,21 @@ function fmtPeriodoLabel(periodo, start, end){
   if(periodo === 'ano') return `Ano de ${start.getFullYear()}`;
   if(periodo === 'mes') return start.toLocaleDateString('pt-BR', { month:'long', year:'numeric' });
   return `Semana de ${start.toLocaleDateString('pt-BR', opts)} a ${end.toLocaleDateString('pt-BR', opts)}`;
+}
+
+// Imprime apenas o relatório (trocas, manutenções ou chamados) cujo botão foi clicado
+function imprimirRelatorio(btn){
+  const card = btn.closest('.card');
+  const view = document.getElementById('view-relatorio');
+  card.classList.add('print-target');
+  view.classList.add('printing-one');
+  const limpar = () => {
+    card.classList.remove('print-target');
+    view.classList.remove('printing-one');
+    window.removeEventListener('afterprint', limpar);
+  };
+  window.addEventListener('afterprint', limpar);
+  window.print();
 }
 
 function gerarRelatorio(){
