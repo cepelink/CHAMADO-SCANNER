@@ -796,6 +796,14 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
         <button class="ghost" type="button" onclick="adicionarItemManutencao()">+ Adicionar item à lista</button>
         <div id="manutItensList" style="margin-top:10px"></div>
         <div class="hint" style="margin-top:6px">Se não houve troca de consumíveis, deixe a lista vazia e preencha só a observação.</div>
+
+        <label style="margin-top:14px">Peça trocada fora do estoque (descrever)</label>
+        <input id="manutAvulsaNomePrev" placeholder="Ex: Rolo de tração (não cadastrado)">
+        <label>Quantidade</label>
+        <input id="manutAvulsaQtdPrev" type="number" min="1" value="1">
+        <button class="ghost" type="button" onclick="adicionarPecaAvulsaPrev()">+ Adicionar peça avulsa</button>
+        <div class="hint" style="margin-top:6px">Peças avulsas ficam registradas na manutenção, mas não dão baixa no estoque.</div>
+        <div id="manutAvulsasPrevList" style="margin-top:10px"></div>
       </div>
 
       <div id="manutCorretivaBox" style="display:none">
@@ -1251,6 +1259,7 @@ let manutScannerSnapshot = null; // idem, para a tela de manutenção
 let manutItens = []; // lista temporária de itens (consumíveis) da manutenção preventiva antes de salvar
 let manutItensCorr = []; // peças/consumíveis do estoque trocados na corretiva (várias) antes de salvar
 let manutAvulsas = []; // peças fora do estoque (só descrição + qtd) da corretiva, sem baixa
+let manutAvulsasPrev = []; // peças fora do estoque trocadas na preventiva, sem baixa
 let editManutNovosItens = []; // consumíveis do estoque a acrescentar ao editar uma preventiva (baixa ao salvar)
 let editManutAvulsas = []; // peças fora do estoque da manutenção sendo editada (cópia de trabalho)
 
@@ -2503,6 +2512,39 @@ function renderManutAvulsas(){
     </div>`).join('');
 }
 
+function adicionarPecaAvulsaPrev(){
+  const nome = document.getElementById('manutAvulsaNomePrev').value.trim();
+  const qtd = parseInt(document.getElementById('manutAvulsaQtdPrev').value) || 0;
+  if(!nome){ showToast('Descreva a peça', true); return; }
+  if(qtd <= 0){ showToast('Informe uma quantidade válida', true); return; }
+  const existente = manutAvulsasPrev.find(a => a.nome.toLowerCase() === nome.toLowerCase());
+  if(existente){ existente.qtd += qtd; }
+  else { manutAvulsasPrev.push({ nome, qtd }); }
+  document.getElementById('manutAvulsaNomePrev').value = '';
+  document.getElementById('manutAvulsaQtdPrev').value = 1;
+  renderManutAvulsasPrev();
+}
+
+function removerPecaAvulsaPrev(idx){
+  manutAvulsasPrev.splice(idx, 1);
+  renderManutAvulsasPrev();
+}
+
+function renderManutAvulsasPrev(){
+  const box = document.getElementById('manutAvulsasPrevList');
+  if(!box) return;
+  box.innerHTML = manutAvulsasPrev.map((a, idx) => `
+    <div class="list-item" style="padding:8px 10px">
+      <div class="top-row">
+        <span>${escapeHtml(a.nome)} <span class="hint">(fora do estoque)</span></span>
+        <span style="display:flex;align-items:center;gap:8px">
+          <span class="num" style="font-weight:700">×${a.qtd}</span>
+          <button class="ghost" style="padding:2px 8px" type="button" onclick="removerPecaAvulsaPrev(${idx})">✕</button>
+        </span>
+      </div>
+    </div>`).join('');
+}
+
 // Texto único com todas as peças de uma manutenção (estoque + avulsas)
 function fmtItensManut(m){
   const est = (m.itens || []).map(i => `${escapeHtml(i.partNome)} (-${i.qtd})`);
@@ -2526,8 +2568,9 @@ async function lancarManutencao(){
 
   if(tipo === 'preventiva'){
     // preventiva sem troca de consumíveis é permitida, desde que tenha observação
-    if(!manutItens.length && !obs){ showToast('Adicione um item à lista ou preencha a observação', true); return; }
+    if(!manutItens.length && !manutAvulsasPrev.length && !obs){ showToast('Adicione um item à lista ou preencha a observação', true); return; }
     itens = manutItens.slice();
+    pecasAvulsas = manutAvulsasPrev.slice();
     for(const it of itens){
       const part = parts.find(p => p.id === it.partId);
       if(!part || it.qtd > part.qtd){
@@ -2601,6 +2644,9 @@ async function lancarManutencao(){
 
   manutItens = [];
   renderManutItens();
+  manutAvulsasPrev = [];
+  renderManutAvulsasPrev();
+  document.getElementById('manutAvulsaQtdPrev').value = 1;
   manutItensCorr = [];
   manutAvulsas = [];
   renderManutItensCorr();
