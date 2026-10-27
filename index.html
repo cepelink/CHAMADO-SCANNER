@@ -1134,7 +1134,7 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
 <div id="editManutModalOverlay">
   <div class="modal-card">
     <h2>Editar manutenção</h2>
-    <div class="sub">Ajuste os dados deste registro. Peças e quantidades já baixadas do estoque não são alteradas por aqui.</div>
+    <div class="sub">Ajuste os dados deste registro. Peças e quantidades já baixadas do estoque não são alteradas por aqui; na preventiva você pode acrescentar mais consumíveis e peças fora do estoque.</div>
     <input type="hidden" id="editManutId" value="">
     <label>Scanner / patrimônio</label>
     <div class="scanner-field-row">
@@ -1150,6 +1150,26 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
     <div id="editManutCustoWrap">
       <label>Custo (R$)</label>
       <input id="editManutCusto" type="number" min="0" step="0.01" placeholder="Ex: 150.00">
+    </div>
+    <div id="editManutPecasBox" style="display:none">
+      <label style="margin-top:14px">Já lançado nesta manutenção</label>
+      <div id="editManutItensAtuais"></div>
+
+      <label style="margin-top:14px">Adicionar consumível do estoque</label>
+      <select id="editManutPeca"></select>
+      <label>Quantidade</label>
+      <input id="editManutQtd" type="number" min="1" value="1">
+      <button class="ghost" type="button" onclick="adicionarItemEditManut()">+ Adicionar do estoque</button>
+      <div class="hint" style="margin-top:6px">Ao salvar, dá baixa no estoque.</div>
+      <div id="editManutItensNovos" style="margin-top:10px"></div>
+
+      <label style="margin-top:14px">Peça trocada fora do estoque (descrever)</label>
+      <input id="editManutAvulsaNome" placeholder="Ex: Rolo de tração (não cadastrado)">
+      <label>Quantidade</label>
+      <input id="editManutAvulsaQtd" type="number" min="1" value="1">
+      <button class="ghost" type="button" onclick="adicionarAvulsaEditManut()">+ Adicionar peça avulsa</button>
+      <div class="hint" style="margin-top:6px">Peças avulsas ficam registradas na manutenção, mas não dão baixa no estoque.</div>
+      <div id="editManutAvulsasList" style="margin-top:10px"></div>
     </div>
     <label>Observação</label>
     <textarea id="editManutObs" placeholder="Detalhes da manutenção..."></textarea>
@@ -1231,6 +1251,8 @@ let manutScannerSnapshot = null; // idem, para a tela de manutenção
 let manutItens = []; // lista temporária de itens (consumíveis) da manutenção preventiva antes de salvar
 let manutItensCorr = []; // peças/consumíveis do estoque trocados na corretiva (várias) antes de salvar
 let manutAvulsas = []; // peças fora do estoque (só descrição + qtd) da corretiva, sem baixa
+let editManutNovosItens = []; // consumíveis do estoque a acrescentar ao editar uma preventiva (baixa ao salvar)
+let editManutAvulsas = []; // peças fora do estoque da manutenção sendo editada (cópia de trabalho)
 
 // ---------- storage helpers (Firestore — dados compartilhados entre todos os usuários) ----------
 async function loadUsersAndBoot(){
@@ -2282,6 +2304,8 @@ function fillPecaSelects(){
   document.getElementById('trocaPeca').innerHTML = parts.length ? opts : empty;
   document.getElementById('manutPeca').innerHTML = parts.length ? opts : empty;
   document.getElementById('manutPecaCorr').innerHTML = parts.length ? opts : empty;
+  const editSel = document.getElementById('editManutPeca');
+  if(editSel) editSel.innerHTML = parts.length ? opts : empty;
 }
 
 // ---------- entrada ----------
@@ -3296,6 +3320,17 @@ function abrirEditarManutencao(id){
   document.getElementById('editManutCusto').value = m.custo != null ? m.custo : '';
   document.getElementById('editManutCustoWrap').style.display = m.tipo === 'corretiva' ? 'block' : 'none';
   document.getElementById('editManutErro').textContent = '';
+  const ehPrev = m.tipo === 'preventiva';
+  document.getElementById('editManutPecasBox').style.display = ehPrev ? 'block' : 'none';
+  editManutNovosItens = [];
+  editManutAvulsas = (m.pecasAvulsas || []).map(a => ({ nome: a.nome, qtd: a.qtd }));
+  if(ehPrev){
+    fillPecaSelects();
+    document.getElementById('editManutQtd').value = 1;
+    document.getElementById('editManutAvulsaNome').value = '';
+    document.getElementById('editManutAvulsaQtd').value = 1;
+    renderEditManutPecas();
+  }
   limparScannerInfo('editManutScannerInfo');
   // se o nome bate com um scanner já cadastrado, mostra os dados completos dele
   const scannerCad = m.scanner ? scanners.find(s => s.nome === m.scanner) : null;
@@ -3305,6 +3340,84 @@ function abrirEditarManutencao(id){
 
 function fecharEditarManutencao(){
   document.getElementById('editManutModalOverlay').classList.remove('show');
+}
+
+function adicionarItemEditManut(){
+  const partId = document.getElementById('editManutPeca').value;
+  const qtd = parseInt(document.getElementById('editManutQtd').value) || 0;
+  if(!partId){ showToast('Selecione uma peça', true); return; }
+  if(qtd <= 0){ showToast('Informe uma quantidade válida', true); return; }
+  const part = parts.find(p => p.id === partId);
+  if(!part) return;
+  const existente = editManutNovosItens.find(i => i.partId === partId);
+  if(existente){ existente.qtd += qtd; }
+  else { editManutNovosItens.push({ partId, partNome: part.nome, qtd }); }
+  document.getElementById('editManutQtd').value = 1;
+  renderEditManutPecas();
+}
+
+function removerItemEditManut(partId){
+  editManutNovosItens = editManutNovosItens.filter(i => i.partId !== partId);
+  renderEditManutPecas();
+}
+
+function adicionarAvulsaEditManut(){
+  const nome = document.getElementById('editManutAvulsaNome').value.trim();
+  const qtd = parseInt(document.getElementById('editManutAvulsaQtd').value) || 0;
+  if(!nome){ showToast('Descreva a peça', true); return; }
+  if(qtd <= 0){ showToast('Informe uma quantidade válida', true); return; }
+  const existente = editManutAvulsas.find(a => a.nome.toLowerCase() === nome.toLowerCase());
+  if(existente){ existente.qtd += qtd; }
+  else { editManutAvulsas.push({ nome, qtd }); }
+  document.getElementById('editManutAvulsaNome').value = '';
+  document.getElementById('editManutAvulsaQtd').value = 1;
+  renderEditManutPecas();
+}
+
+function removerAvulsaEditManut(idx){
+  editManutAvulsas.splice(idx, 1);
+  renderEditManutPecas();
+}
+
+function renderEditManutPecas(){
+  const id = document.getElementById('editManutId').value;
+  const m = maintenances.find(x => x.id === id);
+
+  // consumíveis do estoque já lançados (somente leitura — a baixa já foi feita)
+  const atuais = (m && m.itens) || [];
+  document.getElementById('editManutItensAtuais').innerHTML = atuais.length
+    ? atuais.map(i => `
+      <div class="list-item" style="padding:8px 10px">
+        <div class="top-row">
+          <span>${escapeHtml(i.partNome)}</span>
+          <span class="num" style="font-weight:700">-${i.qtd}</span>
+        </div>
+      </div>`).join('')
+    : '<div class="hint">Nenhum consumível do estoque lançado até agora.</div>';
+
+  // consumíveis novos (ainda não salvos)
+  document.getElementById('editManutItensNovos').innerHTML = editManutNovosItens.map(i => `
+    <div class="list-item" style="padding:8px 10px">
+      <div class="top-row">
+        <span>${escapeHtml(i.partNome)} <span class="hint">(novo)</span></span>
+        <span style="display:flex;align-items:center;gap:8px">
+          <span class="num" style="font-weight:700">-${i.qtd}</span>
+          <button class="ghost" style="padding:2px 8px" type="button" onclick="removerItemEditManut('${i.partId}')">✕</button>
+        </span>
+      </div>
+    </div>`).join('');
+
+  // peças fora do estoque (existentes + novas; sem impacto no estoque)
+  document.getElementById('editManutAvulsasList').innerHTML = editManutAvulsas.map((a, idx) => `
+    <div class="list-item" style="padding:8px 10px">
+      <div class="top-row">
+        <span>${escapeHtml(a.nome)} <span class="hint">(fora do estoque)</span></span>
+        <span style="display:flex;align-items:center;gap:8px">
+          <span class="num" style="font-weight:700">×${a.qtd}</span>
+          <button class="ghost" style="padding:2px 8px" type="button" onclick="removerAvulsaEditManut(${idx})">✕</button>
+        </span>
+      </div>
+    </div>`).join('');
 }
 
 async function salvarEdicaoManutencao(){
@@ -3322,10 +3435,55 @@ async function salvarEdicaoManutencao(){
   if(!scanner){ erro.textContent = 'Informe o scanner.'; return; }
   if(!dataInput){ erro.textContent = 'Informe a data.'; return; }
 
-  // não mexe em peças/quantidades/estoque já baixados — só corrige os dados de identificação do registro
+  const ehPrev = m.tipo === 'preventiva';
+
+  // valida o estoque dos consumíveis novos antes de mexer em qualquer coisa
+  if(ehPrev){
+    for(const it of editManutNovosItens){
+      const part = parts.find(p => p.id === it.partId);
+      if(!part || it.qtd > part.qtd){
+        erro.textContent = `Estoque insuficiente para ${it.partNome}${part ? ' (disponível ' + part.qtd + ')' : ''}.`;
+        return;
+      }
+    }
+  }
+
+  // peças/quantidades já baixadas não são alteradas; só a identificação do registro
+  // (e, na preventiva, os consumíveis/peças avulsas acrescentados agora)
   const agora = new Date();
   const [ano, mes, dia] = dataInput.split('-').map(Number);
   const dataManut = new Date(ano, mes - 1, dia, agora.getHours(), agora.getMinutes());
+
+  if(ehPrev && editManutNovosItens.length){
+    const aplicados = [];
+    try{
+      for(const it of editManutNovosItens){
+        const part = parts.find(p => p.id === it.partId);
+        await aplicarMovimentoEstoque(part, -it.qtd, {
+          id: uid(),
+          tipo: 'manutencao_preventiva',
+          partId: it.partId, partNome: it.partNome, qtd: it.qtd,
+          scanner, obs, data: dataManut.toISOString(), maintenanceId: m.id
+        });
+        m.itens = m.itens || [];
+        const jaTem = m.itens.find(x => x.partId === it.partId);
+        if(jaTem){ jaTem.qtd += it.qtd; }
+        else { m.itens.push({ partId: it.partId, partNome: it.partNome, qtd: it.qtd }); }
+        aplicados.push(it.partId);
+      }
+    }catch(e){
+      // o que já foi baixado antes da falha fica registrado na manutenção (para o estorno funcionar)
+      if(aplicados.length) await saveMaintenance(m);
+      erro.textContent = (e && e.message === 'ESTOQUE_INSUFICIENTE')
+        ? 'Estoque insuficiente: outra pessoa já deu baixa em uma dessas peças. Revise a lista.'
+        : 'Erro ao dar baixa no estoque. Tente novamente.';
+      editManutNovosItens = editManutNovosItens.filter(i => !aplicados.includes(i.partId));
+      fillPecaSelects();
+      renderEditManutPecas();
+      renderAll();
+      return;
+    }
+  }
 
   m.scanner = scanner;
   m.obs = obs;
@@ -3333,9 +3491,14 @@ async function salvarEdicaoManutencao(){
   if(m.tipo === 'corretiva'){
     m.custo = custoInput ? parseFloat(custoInput) : null;
   }
+  if(ehPrev){
+    m.pecasAvulsas = editManutAvulsas.map(a => ({ nome: a.nome, qtd: a.qtd }));
+  }
 
   await saveMaintenance(m);
+  editManutNovosItens = [];
   fecharEditarManutencao();
+  fillPecaSelects();
   showToast('Manutenção atualizada');
   renderAll();
 }
