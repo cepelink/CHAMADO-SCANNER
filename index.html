@@ -634,6 +634,16 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
           <input id="scannerPatrimonio" placeholder="Nº de tombamento">
         </div>
       </div>
+      <div class="row">
+        <div>
+          <label>PC ID conectado</label>
+          <input id="scannerPcId" placeholder="Ex: PC-CAPTURA-04">
+        </div>
+        <div>
+          <label>Licença vinculada</label>
+          <input id="scannerLicenca" placeholder="Ex: Chave ou nº da licença">
+        </div>
+      </div>
       <label>Localização</label>
       <input id="scannerLocal" placeholder="Ex: Recepção - Térreo" list="listaLocaisScanner" autocomplete="off">
       <datalist id="listaLocaisScanner"></datalist>
@@ -1613,6 +1623,8 @@ function scannerRowHtml(s){
         ${s.marca ? escapeHtml(s.marca) + ' ' : ''}${s.modelo ? escapeHtml(s.modelo) : (s.marca ? '' : '—')}
         ${s.numeroSerie ? ' · Série ' + escapeHtml(s.numeroSerie) : ''}
         ${s.patrimonio ? ' · Tombo ' + escapeHtml(s.patrimonio) : ''}
+        ${s.pcId ? ' · PC ' + escapeHtml(s.pcId) : ''}
+        ${s.licenca ? ' · Licença ' + escapeHtml(s.licenca) : ''}
         ${s.localizacao ? ' · ' + escapeHtml(s.localizacao) : ''}
         ${s.contrato ? ' · Contrato ' + escapeHtml(s.contrato) : ''}
         ${s.garantia ? ' · Garantia até ' + fmtDataSimples(s.garantia) : ''}
@@ -1918,6 +1930,8 @@ async function salvarScanner(){
   const modelo = document.getElementById('scannerModelo').value.trim();
   const numeroSerie = document.getElementById('scannerNumSerie').value.trim();
   const patrimonio = document.getElementById('scannerPatrimonio').value.trim();
+  const pcId = document.getElementById('scannerPcId').value.trim();
+  const licenca = document.getElementById('scannerLicenca').value.trim();
   const localizacao = document.getElementById('scannerLocal').value.trim();
   const situacaoSel = document.getElementById('scannerSituacao').value;
   let situacao = situacaoSel;
@@ -1949,12 +1963,13 @@ async function salvarScanner(){
       scannerSalvo.nome = nome; scannerSalvo.marca = marca; scannerSalvo.modelo = modelo;
       scannerSalvo.numeroSerie = numeroSerie;
       scannerSalvo.patrimonio = patrimonio; scannerSalvo.localizacao = localizacao;
+      scannerSalvo.pcId = pcId; scannerSalvo.licenca = licenca;
       scannerSalvo.situacao = situacao; scannerSalvo.situacaoCustom = situacaoCustom; scannerSalvo.localExterno = localExterno;
       scannerSalvo.contrato = contrato; scannerSalvo.garantia = garantia; scannerSalvo.obs = obs;
     }
     showToast('Scanner atualizado');
   } else {
-    scannerSalvo = { id: uid(), nome, marca, modelo, numeroSerie, patrimonio, localizacao, situacao, situacaoCustom, localExterno, contrato, garantia, obs, tipo: 'producao' };
+    scannerSalvo = { id: uid(), nome, marca, modelo, numeroSerie, patrimonio, pcId, licenca, localizacao, situacao, situacaoCustom, localExterno, contrato, garantia, obs, tipo: 'producao' };
     scanners.push(scannerSalvo);
     showToast('Scanner cadastrado');
   }
@@ -1977,6 +1992,8 @@ function editarScanner(id){
   document.getElementById('scannerModelo').value = s.modelo || '';
   document.getElementById('scannerNumSerie').value = s.numeroSerie || '';
   document.getElementById('scannerPatrimonio').value = s.patrimonio || '';
+  document.getElementById('scannerPcId').value = s.pcId || '';
+  document.getElementById('scannerLicenca').value = s.licenca || '';
   document.getElementById('scannerLocal').value = s.localizacao || '';
   renderOpcoesSituacaoScanner();
   if(s.situacao === 'custom' && s.situacaoCustom){
@@ -2014,6 +2031,8 @@ function cancelarEdicaoScanner(){
   document.getElementById('scannerModelo').value = '';
   document.getElementById('scannerNumSerie').value = '';
   document.getElementById('scannerPatrimonio').value = '';
+  document.getElementById('scannerPcId').value = '';
+  document.getElementById('scannerLicenca').value = '';
   document.getElementById('scannerLocal').value = '';
   renderOpcoesSituacaoScanner('producao');
   document.getElementById('scannerSituacaoNovoInput').value = '';
@@ -2110,6 +2129,8 @@ function imprimirQrScanner(id){
           <div><b>Modelo:</b> ${escapeHtml(s.modelo || '—')}</div>
           <div><b>Nº de série:</b> ${escapeHtml(s.numeroSerie || '—')}</div>
           <div><b>Tombo:</b> ${escapeHtml(s.patrimonio || '—')}</div>
+          <div><b>PC ID:</b> ${escapeHtml(s.pcId || '—')}</div>
+          <div><b>Licença:</b> ${escapeHtml(s.licenca || '—')}</div>
           <div><b>Localização:</b> ${escapeHtml(s.localizacao || '—')}</div>
           <div><b>Contrato:</b> ${escapeHtml(s.contrato || '—')}</div>
           <div><b>Garantia até:</b> ${s.garantia ? fmtDataSimples(s.garantia) : '—'}</div>
@@ -2261,6 +2282,8 @@ function exibirScannerInfo(boxId, s){
     ['Modelo', s.modelo],
     ['Número de série', s.numeroSerie],
     ['Tombo', s.patrimonio],
+    ['PC ID conectado', s.pcId],
+    ['Licença vinculada', s.licenca],
     ['Localização', s.localizacao],
     ['Contrato', s.contrato],
     ['Data fim da garantia', s.garantia ? fmtDataSimples(s.garantia) : ''],
