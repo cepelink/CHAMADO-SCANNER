@@ -868,20 +868,39 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
     </div>
     <div class="card">
       <h2>Abrir chamado</h2>
-      <label>Scanner / patrimônio</label>
+      <label>Tipo de chamado</label>
+      <select id="chTipo" onchange="alternarTipoChamado()">
+        <option value="problema">🛠 Problema no scanner</option>
+        <option value="mudanca">🔄 Solicitar mudança de scanner (trocar de máquina)</option>
+      </select>
+      <label id="chScannerLabel">Scanner / patrimônio</label>
       <input type="hidden" id="chScannerId" value="">
       <div class="scanner-field-row">
-        <input id="chScanner" placeholder="Ex: Scanner 04 - Recepção" oninput="limparScannerInfo('chScannerInfo')">
+        <input id="chScanner" placeholder="Ex: Scanner 04 - Recepção" oninput="limparScannerInfo('chScannerInfo'); atualizarPreviaMudanca()">
         <button class="ghost" type="button" onclick="abrirQrScanner('chamado')">📷 Bipar QR</button>
       </div>
       <select id="chScannerManualSelect" style="margin-top:8px" onchange="selecionarScannerManual('chamado', this.value); this.value='';">
         <option value="">— ou selecione um scanner cadastrado —</option>
       </select>
       <div class="card" id="chScannerInfo" style="display:none;margin-top:10px;background:var(--surface-2)"></div>
-      <label>Descrição do problema</label>
+      <div id="chMudancaWrap" style="display:none">
+        <label>Máquina de destino (PC ID)</label>
+        <input id="chPcDestino" placeholder="Ex: PC-CAPTURA-01" list="listaPcIdsChamado" autocomplete="off" oninput="atualizarPreviaMudanca()">
+        <datalist id="listaPcIdsChamado"></datalist>
+        <div id="chAcaoOutroWrap" style="display:none">
+          <label>Scanner que já está nessa máquina</label>
+          <select id="chAcaoOutro" onchange="atualizarPreviaMudanca()">
+            <option value="trocar">Trocar de lugar (ele vai para a máquina atual deste scanner)</option>
+            <option value="liberar">Deixar sem máquina vinculada</option>
+          </select>
+        </div>
+        <div class="card" id="chMudancaPrevia" style="display:none;margin-top:10px;background:var(--surface-2)"></div>
+        <div class="hint" style="margin-top:8px">O cadastro dos scanners será atualizado automaticamente quando este chamado for marcado como <b>resolvido</b>.</div>
+      </div>
+      <label id="chProblemaLabel">Descrição do problema</label>
       <textarea id="chProblema" placeholder="Descreva o que está acontecendo..."></textarea>
 
-      <button class="primary info" onclick="abrirChamado()">Abrir chamado</button>
+      <button class="primary info" id="chAbrirBtn" onclick="abrirChamado()">Abrir chamado</button>
     </div>
     <div class="card">
       <h2>Chamados <span class="tag" id="totalChamadosTag">0</span></h2>
@@ -1570,8 +1589,16 @@ async function cadastrarPeca(){
 // Verifica se o scanner tem chamado em aberto/andamento vinculado a ele pelo nome
 function scannerTemChamadoAberto(nome){
   if(!nome) return false;
-  return tickets.some(t => t.status !== 'resolvido' && (t.scanner || '').toLowerCase() === nome.toLowerCase());
+  return tickets.some(t => t.status !== 'resolvido' && t.tipo !== 'mudanca' && (t.scanner || '').toLowerCase() === nome.toLowerCase());
 }
+
+// Verifica se existe solicitação de mudança de máquina pendente para o scanner
+function scannerTemMudancaPendente(s){
+  if(!s) return false;
+  return tickets.some(t => t.tipo === 'mudanca' && t.status !== 'resolvido' && t.mudanca && t.mudanca.scannerId === s.id);
+}
+
+function normPc(v){ return (v || '').toString().trim().toLowerCase(); }
 
 // Retorna o texto (label) de exibição da situação de um scanner
 function situacaoLabelScanner(s){
@@ -1628,8 +1655,14 @@ function scannerRowHtml(s){
         ${s.localizacao ? ' · ' + escapeHtml(s.localizacao) : ''}
         ${s.contrato ? ' · Contrato ' + escapeHtml(s.contrato) : ''}
         ${s.garantia ? ' · Garantia até ' + fmtDataSimples(s.garantia) : ''}
+        ${(() => {
+          const h = Array.isArray(s.historicoMovimentacao) ? s.historicoMovimentacao : [];
+          const u = h[h.length - 1];
+          return u ? ' · ↔ Última movimentação: ' + fmtDate(u.data) + ' (' + escapeHtml(u.de || 'sem máquina') + ' → ' + escapeHtml(u.para || 'sem máquina') + (u.chamadoId ? '' : ', edição manual') + ')' : '';
+        })()}
       </div>
       <div class="badges">
+        ${scannerTemMudancaPendente(s) ? '<span class="status-pill status-andamento">Mudança solicitada</span>' : ''}
         ${s.garantia && garantiaVencida(s.garantia) ? '<span class="status-pill status-aberto">Garantia vencida</span>' : ''}
         ${temChamado ? '<span class="status-pill status-aberto">Chamado aberto</span>' : ''}
         ${foraDeOperacao ? `<span class="status-pill status-aberto">${escapeHtml(situacaoLabelScanner(s))}</span>` : '<span class="status-pill status-resolvido">Em produção</span>'}
@@ -1960,6 +1993,11 @@ async function salvarScanner(){
   if(editId){
     scannerSalvo = scanners.find(s => s.id === editId);
     if(scannerSalvo){
+      const pcAnterior = scannerSalvo.pcId || '';
+      if(pcAnterior !== pcId){
+        if(!Array.isArray(scannerSalvo.historicoMovimentacao)) scannerSalvo.historicoMovimentacao = [];
+        scannerSalvo.historicoMovimentacao.push({ data: new Date().toISOString(), de: pcAnterior, para: pcId, chamadoId: null, usuario: currentUser ? currentUser.nome : null });
+      }
       scannerSalvo.nome = nome; scannerSalvo.marca = marca; scannerSalvo.modelo = modelo;
       scannerSalvo.numeroSerie = numeroSerie;
       scannerSalvo.patrimonio = patrimonio; scannerSalvo.localizacao = localizacao;
@@ -2250,6 +2288,7 @@ function aplicarScannerAoAlvo(alvoKey, s){
     manutScannerSnapshot = s;
   }
   exibirScannerInfo(alvo.box, s);
+  if(alvoKey === 'chamado' && typeof atualizarPreviaMudanca === 'function') atualizarPreviaMudanca();
 }
 
 // Permite escolher o scanner manualmente (select) em vez de bipar o QR Code
@@ -2272,6 +2311,13 @@ function fillManualScannerSelects(){
     if(!sel) return;
     sel.innerHTML = `<option value="">— ou selecione um scanner cadastrado —</option>${opts}`;
   });
+  // lista de máquinas (PC IDs) já usadas nos scanners, para o chamado de mudança
+  const dlPc = document.getElementById('listaPcIdsChamado');
+  if(dlPc){
+    const pcs = [...new Set(scanners.map(s => (s.pcId || '').trim()).filter(Boolean))]
+      .sort((a,b) => a.localeCompare(b, 'pt-BR', {numeric:true}));
+    dlPc.innerHTML = pcs.map(pc => `<option value="${escapeHtml(pc)}">`).join('');
+  }
 }
 
 function exibirScannerInfo(boxId, s){
@@ -2726,7 +2772,146 @@ async function enviarEmailChamado(scanner, problema, scannerInfo){
   }
 }
 
+// Alterna o formulário entre "Problema no scanner" e "Mudança de scanner"
+function alternarTipoChamado(){
+  const mud = document.getElementById('chTipo').value === 'mudanca';
+  document.getElementById('chMudancaWrap').style.display = mud ? 'block' : 'none';
+  document.getElementById('chScannerLabel').textContent = mud ? 'Scanner que será movimentado' : 'Scanner / patrimônio';
+  document.getElementById('chProblemaLabel').textContent = mud ? 'Motivo da mudança (opcional)' : 'Descrição do problema';
+  document.getElementById('chProblema').placeholder = mud ? 'Ex: scanner da máquina 1 apresentando falhas, trocar por outro...' : 'Descreva o que está acontecendo...';
+  document.getElementById('chAbrirBtn').textContent = mud ? 'Solicitar mudança' : 'Abrir chamado';
+  atualizarPreviaMudanca();
+}
+
+// Retorna o scanner cadastrado que está selecionado/digitado no formulário de chamado
+function getScannerChamadoSelecionado(){
+  const nome = document.getElementById('chScanner').value.trim();
+  if(!nome) return null;
+  const id = document.getElementById('chScannerId').value;
+  let s = id ? scanners.find(x => x.id === id) : null;
+  if(!s || s.nome.toLowerCase() !== nome.toLowerCase()){
+    s = scanners.find(x => x.nome.toLowerCase() === nome.toLowerCase()) || null;
+  }
+  return s;
+}
+
+// Mostra o "antes e depois" da mudança de máquina enquanto o usuário preenche
+function atualizarPreviaMudanca(){
+  const box = document.getElementById('chMudancaPrevia');
+  const acaoWrap = document.getElementById('chAcaoOutroWrap');
+  if(!box || !acaoWrap) return;
+  if(document.getElementById('chTipo').value !== 'mudanca'){
+    box.style.display = 'none'; acaoWrap.style.display = 'none'; return;
+  }
+  const s = getScannerChamadoSelecionado();
+  const destino = document.getElementById('chPcDestino').value.trim();
+  const outro = (s && destino) ? scanners.find(x => x.id !== s.id && normPc(x.pcId) === normPc(destino)) : null;
+  acaoWrap.style.display = outro ? 'block' : 'none';
+  if(!s){ box.style.display = 'none'; return; }
+  const linhas = [`<b>${escapeHtml(s.nome)}</b> está hoje em: ${s.pcId ? escapeHtml(s.pcId) : 'nenhuma máquina'}`];
+  if(destino){
+    if(normPc(s.pcId) === normPc(destino)){
+      linhas.push('⚠ Esse scanner já está vinculado a essa máquina.');
+    } else {
+      linhas.push(`Depois da mudança: ${escapeHtml(s.nome)} → ${escapeHtml(destino)}`);
+      if(outro){
+        const acao = document.getElementById('chAcaoOutro').value;
+        linhas.push(acao === 'trocar'
+          ? `${escapeHtml(outro.nome)} (hoje em ${escapeHtml(destino)}) → ${s.pcId ? escapeHtml(s.pcId) : 'sem máquina'}`
+          : `${escapeHtml(outro.nome)} (hoje em ${escapeHtml(destino)}) → sem máquina vinculada`);
+      } else {
+        linhas.push('Nenhum outro scanner está vinculado a essa máquina hoje.');
+      }
+    }
+  }
+  box.innerHTML = `<div class="hint" style="margin:0 0 6px;color:var(--text)"><b>Prévia da mudança</b></div>`
+    + linhas.map(l => `<div style="font-size:12.5px;padding:3px 0">${l}</div>`).join('');
+  box.style.display = 'block';
+}
+
+async function abrirChamadoMudanca(){
+  const s = getScannerChamadoSelecionado();
+  const destino = document.getElementById('chPcDestino').value.trim();
+  const motivo = document.getElementById('chProblema').value.trim();
+  if(!s){ showToast('Selecione um scanner cadastrado (bipe o QR ou escolha na lista)', true); return; }
+  if(!destino){ showToast('Informe a máquina de destino', true); return; }
+  if(normPc(s.pcId) === normPc(destino)){ showToast('Esse scanner já está vinculado a essa máquina', true); return; }
+
+  const outro = scanners.find(x => x.id !== s.id && normPc(x.pcId) === normPc(destino)) || null;
+  const acaoOutro = outro ? document.getElementById('chAcaoOutro').value : '';
+  const origem = s.pcId || '';
+
+  let problema = `Mudança de máquina: ${s.nome} — de ${origem || 'sem máquina'} para ${destino}.`;
+  if(outro) problema += acaoOutro === 'trocar'
+    ? ` ${outro.nome} irá para ${origem || 'sem máquina'}.`
+    : ` ${outro.nome} ficará sem máquina vinculada.`;
+  if(motivo) problema += ` Motivo: ${motivo}`;
+
+  const scannerInfo = {
+    nome: s.nome || '', marca: s.marca || '', modelo: s.modelo || '',
+    numeroSerie: s.numeroSerie || '', patrimonio: s.patrimonio || '', contrato: s.contrato || ''
+  };
+  const ticket = {
+    id: uid(), tipo: 'mudanca', scanner: s.nome, scannerInfo, problema, status: 'aberto',
+    data: new Date().toISOString(),
+    mudanca: {
+      scannerId: s.id, pcOrigem: origem, pcDestino: destino,
+      outroScannerId: outro ? outro.id : '', outroScannerNome: outro ? outro.nome : '',
+      acaoOutro: acaoOutro, aplicada: false
+    }
+  };
+  ticket.historico = [{ data: ticket.data, status: 'aberto', texto: problema, usuario: currentUser ? currentUser.nome : null }];
+  tickets.unshift(ticket);
+  await saveTicket(ticket);
+
+  document.getElementById('chProblema').value = '';
+  document.getElementById('chPcDestino').value = '';
+  atualizarPreviaMudanca();
+  showToast('Solicitação de mudança aberta — o cadastro será atualizado ao finalizar o chamado');
+
+  enviarEmailChamado(s.nome, problema, scannerInfo);
+  renderAll();
+}
+
+// Aplica a mudança de máquina no cadastro dos scanners (executada ao finalizar o chamado).
+// Devolve um texto-resumo para o histórico do chamado, ou null se nada foi aplicado.
+async function aplicarMudancaScanner(t){
+  const m = (t && t.tipo === 'mudanca') ? t.mudanca : null;
+  if(!m || m.aplicada) return null;
+  const s = scanners.find(x => x.id === m.scannerId);
+  if(!s){
+    showToast('Scanner do chamado não encontrado no cadastro — atualize manualmente', true);
+    return null;
+  }
+  const agora = new Date().toISOString();
+  const usuario = currentUser ? currentUser.nome : null;
+  const origem = s.pcId || '';
+  const destino = m.pcDestino;
+  // reavalia quem está na máquina de destino NO MOMENTO de finalizar
+  const outro = scanners.find(x => x.id !== s.id && normPc(x.pcId) === normPc(destino)) || null;
+
+  const mover = (sc, de, para) => {
+    if(!Array.isArray(sc.historicoMovimentacao)) sc.historicoMovimentacao = [];
+    sc.historicoMovimentacao.push({ data: agora, de: de, para: para, chamadoId: t.id, usuario: usuario });
+    sc.pcId = para;
+  };
+  const alterados = [s];
+  mover(s, origem, destino);
+  let resumo = `Cadastro atualizado automaticamente: ${s.nome} → ${destino}`;
+  if(outro){
+    const novoPc = m.acaoOutro === 'trocar' ? origem : '';
+    mover(outro, outro.pcId || '', novoPc);
+    alterados.push(outro);
+    resumo += `; ${outro.nome} → ${novoPc || 'sem máquina'}`;
+  }
+  for(const sc of alterados) await saveScannerDoc(sc);
+  m.aplicada = true;
+  m.aplicadaEm = agora;
+  return resumo;
+}
+
 async function abrirChamado(){
+  if(document.getElementById('chTipo').value === 'mudanca') return abrirChamadoMudanca();
   const scanner = document.getElementById('chScanner').value.trim();
   const problema = document.getElementById('chProblema').value.trim();
   if(!scanner || !problema){ showToast('Preencha scanner e descrição', true); return; }
@@ -2767,8 +2952,10 @@ async function avancarStatus(id){
     t.status = 'resolvido';
     t.dataResolucao = new Date().toISOString(); // marca quando o chamado foi finalizado
   }
+  let textoExtra = '';
+  if(t.status === 'resolvido' && t.tipo === 'mudanca') textoExtra = (await aplicarMudancaScanner(t)) || '';
   if(!Array.isArray(t.historico)) t.historico = [];
-  t.historico.push({ data: new Date().toISOString(), status: t.status, texto: '', usuario: currentUser ? currentUser.nome : null });
+  t.historico.push({ data: new Date().toISOString(), status: t.status, texto: textoExtra, usuario: currentUser ? currentUser.nome : null });
   await saveTicket(t);
   renderAll();
 }
@@ -2833,9 +3020,14 @@ async function salvarEdicaoChamado(){
     delete t.dataResolucao;
   }
 
-  if(status !== statusAnterior){
+  let textoExtra = '';
+  if(status === 'resolvido' && t.tipo === 'mudanca') textoExtra = (await aplicarMudancaScanner(t)) || '';
+  if(status !== statusAnterior || textoExtra){
     if(!Array.isArray(t.historico)) t.historico = [];
-    t.historico.push({ data: new Date().toISOString(), status: status, texto: 'Status alterado manualmente na edição', usuario: currentUser ? currentUser.nome : null });
+    const partesTxt = [];
+    if(status !== statusAnterior) partesTxt.push('Status alterado manualmente na edição');
+    if(textoExtra) partesTxt.push(textoExtra);
+    t.historico.push({ data: new Date().toISOString(), status: status, texto: partesTxt.join(' · '), usuario: currentUser ? currentUser.nome : null });
   }
 
   await saveTicket(t);
@@ -3169,6 +3361,7 @@ function renderChamados(){
         <span class="status-pill status-${t.status}">${labels[t.status]}</span>
       </div>
       ${fmtScannerInfoChamado(t.scannerInfo)}
+      ${t.tipo === 'mudanca' && t.mudanca ? `<div class="meta" style="margin-top:2px">🔄 Mudança de máquina: ${escapeHtml(t.mudanca.pcOrigem || 'sem máquina')} → ${escapeHtml(t.mudanca.pcDestino)} · ${t.mudanca.aplicada ? '✓ cadastro atualizado em ' + fmtDate(t.mudanca.aplicadaEm) : 'cadastro será atualizado ao finalizar'}</div>` : ''}
       <div class="problem">${escapeHtml(t.problema)}</div>
       <div class="meta">Aberto em ${fmtDate(t.data)}${t.status === 'resolvido' && t.dataResolucao ? ' · Finalizado em ' + fmtDate(t.dataResolucao) : ''}</div>
       <div class="actions">
@@ -4263,7 +4456,7 @@ function gerarRelatorioChamados(){
   // Quantidade de chamados em aberto por scanner (nome, número de série, empresa responsável)
   const porScanner = {};
   chamados.forEach(t => {
-    if(t.status === 'resolvido') return;
+    if(t.status === 'resolvido' || t.tipo === 'mudanca') return;
     const nome = t.scanner || '(sem identificação)';
     if(!porScanner[nome]) porScanner[nome] = { qtd:0, info: t.scannerInfo || null };
     porScanner[nome].qtd++;
