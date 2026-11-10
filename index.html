@@ -896,9 +896,15 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
         </div>
         <div id="chEntraWrap" style="display:none">
           <label>Scanner que vai entrar no lugar dele (opcional)</label>
-          <select id="chScannerEntra" onchange="atualizarPreviaMudanca()">
-            <option value="">— nenhum (não definir) —</option>
+          <input type="hidden" id="chScannerEntraId" value="">
+          <div class="scanner-field-row">
+            <input id="chScannerEntra" placeholder="Ex: Captura 3" oninput="limparScannerInfo('chScannerEntraInfo'); atualizarPreviaMudanca()">
+            <button class="ghost" type="button" onclick="abrirQrScanner('chamadoEntra')">📷 Bipar QR</button>
+          </div>
+          <select id="chScannerEntraManualSelect" style="margin-top:8px" onchange="selecionarScannerManual('chamadoEntra', this.value); this.value='';">
+            <option value="">— ou selecione um scanner cadastrado —</option>
           </select>
+          <div class="card" id="chScannerEntraInfo" style="display:none;margin-top:10px;background:var(--surface-2)"></div>
           <div class="hint" style="margin-top:4px">Esse scanner assume a máquina onde o scanner movimentado está hoje.</div>
         </div>
         <div class="card" id="chMudancaPrevia" style="display:none;margin-top:10px;background:var(--surface-2)"></div>
@@ -2274,6 +2280,7 @@ function onQrScanSuccess(decodedText){
 // (usado tanto pela leitura de QR Code quanto pela seleção manual)
 const scannerAlvoMap = {
   chamado: { campo: 'chScanner', box: 'chScannerInfo' },
+  chamadoEntra: { campo: 'chScannerEntra', box: 'chScannerEntraInfo' },
   troca: { campo: 'trocaScanner', box: 'trocaScannerInfo' },
   manutencao: { campo: 'manutScanner', box: 'manutScannerInfo' },
   trocaEdit: { campo: 'editTrocaScanner', box: 'editTrocaScannerInfo' },
@@ -2290,12 +2297,15 @@ function aplicarScannerAoAlvo(alvoKey, s){
     document.getElementById('chScannerId').value = s.id || '';
     chScannerSnapshot = s;
   }
+  if(alvoKey === 'chamadoEntra'){
+    document.getElementById('chScannerEntraId').value = s.id || '';
+  }
   if(alvoKey === 'manutencao'){
     document.getElementById('manutScannerId').value = s.id || '';
     manutScannerSnapshot = s;
   }
   exibirScannerInfo(alvo.box, s);
-  if(alvoKey === 'chamado' && typeof atualizarPreviaMudanca === 'function') atualizarPreviaMudanca();
+  if((alvoKey === 'chamado' || alvoKey === 'chamadoEntra') && typeof atualizarPreviaMudanca === 'function') atualizarPreviaMudanca();
 }
 
 // Permite escolher o scanner manualmente (select) em vez de bipar o QR Code
@@ -2313,13 +2323,11 @@ function fillManualScannerSelects(){
   const opts = listaOrdenada.map(s =>
     `<option value="${escapeHtml(s.id)}">${escapeHtml(s.nome)}${s.patrimonio ? ' — Tombo ' + escapeHtml(s.patrimonio) : ''}</option>`
   ).join('');
-  ['trocaScannerManualSelect','manutScannerManualSelect','chScannerManualSelect','editTrocaScannerManualSelect','editManutScannerManualSelect'].forEach(id => {
+  ['trocaScannerManualSelect','manutScannerManualSelect','chScannerManualSelect','chScannerEntraManualSelect','editTrocaScannerManualSelect','editManutScannerManualSelect'].forEach(id => {
     const sel = document.getElementById(id);
     if(!sel) return;
     sel.innerHTML = `<option value="">— ou selecione um scanner cadastrado —</option>${opts}`;
   });
-  const selEntraReset = document.getElementById('chScannerEntra');
-  if(selEntraReset) selEntraReset.dataset.sid = '';
   // lista de máquinas (PC IDs) já usadas nos scanners, para o chamado de mudança
   const dlPc = document.getElementById('listaPcIdsChamado');
   if(dlPc){
@@ -2362,6 +2370,9 @@ function limparScannerInfo(boxId){
   if(boxId === 'chScannerInfo'){
     document.getElementById('chScannerId').value = '';
     chScannerSnapshot = null;
+  }
+  if(boxId === 'chScannerEntraInfo'){
+    document.getElementById('chScannerEntraId').value = '';
   }
   if(boxId === 'manutScannerInfo'){
     document.getElementById('manutScannerId').value = '';
@@ -2792,6 +2803,18 @@ function alternarTipoChamado(){
   atualizarPreviaMudanca();
 }
 
+// Retorna o scanner cadastrado escolhido no campo "scanner que vai entrar"
+function getScannerEntraSelecionado(){
+  const nome = document.getElementById('chScannerEntra').value.trim();
+  if(!nome) return null;
+  const id = document.getElementById('chScannerEntraId').value;
+  let s = id ? scanners.find(x => x.id === id) : null;
+  if(!s || s.nome.toLowerCase() !== nome.toLowerCase()){
+    s = scanners.find(x => x.nome.toLowerCase() === nome.toLowerCase()) || null;
+  }
+  return s;
+}
+
 // Retorna o scanner cadastrado que está selecionado/digitado no formulário de chamado
 function getScannerChamadoSelecionado(){
   const nome = document.getElementById('chScanner').value.trim();
@@ -2809,33 +2832,28 @@ function atualizarPreviaMudanca(){
   const box = document.getElementById('chMudancaPrevia');
   const acaoWrap = document.getElementById('chAcaoOutroWrap');
   const entraWrap = document.getElementById('chEntraWrap');
-  const selEntra = document.getElementById('chScannerEntra');
-  if(!box || !acaoWrap || !entraWrap || !selEntra) return;
+  if(!box || !acaoWrap || !entraWrap) return;
   if(document.getElementById('chTipo').value !== 'mudanca'){
     box.style.display = 'none'; acaoWrap.style.display = 'none'; entraWrap.style.display = 'none'; return;
   }
   const s = getScannerChamadoSelecionado();
   const destino = document.getElementById('chPcDestino').value.trim();
 
-  // "Scanner que entra no lugar dele" só faz sentido se o scanner já está em uma máquina
-  if(s && s.pcId){
-    if(selEntra.dataset.sid !== s.id){
-      selEntra.innerHTML = '<option value="">— nenhum (não definir) —</option>'
-        + scanners.filter(x => x.id !== s.id).slice().sort((a,b) => a.nome.localeCompare(b.nome))
-          .map(x => `<option value="${escapeHtml(x.id)}">${escapeHtml(x.nome)} — ${x.pcId ? 'hoje em ' + escapeHtml(x.pcId) : 'sem máquina'}</option>`).join('');
-      selEntra.dataset.sid = s.id;
-    }
-    entraWrap.style.display = 'block';
-  } else {
-    entraWrap.style.display = 'none'; selEntra.value = ''; selEntra.dataset.sid = '';
-  }
-  const entra = (entraWrap.style.display === 'block' && selEntra.value) ? scanners.find(x => x.id === selEntra.value) || null : null;
+  // campo "scanner que entra" fica sempre disponível no chamado de mudança
+  entraWrap.style.display = 'block';
+  const entraNome = document.getElementById('chScannerEntra').value.trim();
+  const entraSel = getScannerEntraSelecionado();
+  const avisosEntra = [];
+  if(entraNome && !entraSel) avisosEntra.push('⚠ O scanner que vai entrar não foi encontrado no cadastro.');
+  if(entraSel && s && entraSel.id === s.id) avisosEntra.push('⚠ O scanner que entra não pode ser o mesmo que será movimentado.');
+  if(entraSel && s && !s.pcId) avisosEntra.push('⚠ O scanner movimentado não está em nenhuma máquina, então não há lugar para o outro assumir.');
+  const entra = (entraSel && s && s.pcId && entraSel.id !== s.id) ? entraSel : null;
   const outro = (s && destino) ? scanners.find(x => x.id !== s.id && normPc(x.pcId) === normPc(destino)) : null;
   // com um scanner definido para entrar, o que já está no destino é tratado automaticamente
   acaoWrap.style.display = (outro && !entra) ? 'block' : 'none';
   if(!s){ box.style.display = 'none'; return; }
 
-  const linhas = [`<b>${escapeHtml(s.nome)}</b> está hoje em: ${s.pcId ? escapeHtml(s.pcId) : 'nenhuma máquina'}`];
+  const linhas = [`<b>${escapeHtml(s.nome)}</b> está hoje em: ${s.pcId ? escapeHtml(s.pcId) : 'nenhuma máquina'}`, ...avisosEntra];
   if(destino){
     if(normPc(s.pcId) === normPc(destino)){
       linhas.push('⚠ Esse scanner já está vinculado a essa máquina.');
@@ -2869,8 +2887,11 @@ async function abrirChamadoMudanca(){
 
   const origem = s.pcId || '';
   const outro = scanners.find(x => x.id !== s.id && normPc(x.pcId) === normPc(destino)) || null;
-  const selEntra = document.getElementById('chScannerEntra');
-  const entra = (origem && selEntra && selEntra.value) ? (scanners.find(x => x.id === selEntra.value && x.id !== s.id) || null) : null;
+  const entraNome = document.getElementById('chScannerEntra').value.trim();
+  const entra = getScannerEntraSelecionado();
+  if(entraNome && !entra){ showToast('O scanner que vai entrar não foi encontrado no cadastro', true); return; }
+  if(entra && entra.id === s.id){ showToast('O scanner que entra não pode ser o mesmo que será movimentado', true); return; }
+  if(entra && !origem){ showToast('O scanner movimentado não está em nenhuma máquina — não há lugar para o outro assumir', true); return; }
   const acaoOutro = outro ? (entra ? (outro.id === entra.id ? 'trocar' : 'liberar') : document.getElementById('chAcaoOutro').value) : '';
 
   let problema = `Mudança de máquina: ${s.nome} — de ${origem || 'sem máquina'} para ${destino}.`;
@@ -2905,7 +2926,8 @@ async function abrirChamadoMudanca(){
 
   document.getElementById('chProblema').value = '';
   document.getElementById('chPcDestino').value = '';
-  if(selEntra) selEntra.value = '';
+  document.getElementById('chScannerEntra').value = '';
+  limparScannerInfo('chScannerEntraInfo');
   atualizarPreviaMudanca();
   showToast('Solicitação de mudança aberta — o cadastro será atualizado ao finalizar o chamado');
 
@@ -3412,7 +3434,7 @@ function renderChamados(){
         <span class="status-pill status-${t.status}">${labels[t.status]}</span>
       </div>
       ${fmtScannerInfoChamado(t.scannerInfo)}
-      ${t.tipo === 'mudanca' && t.mudanca ? `<div class="meta" style="margin-top:2px">🔄 Mudança de máquina: ${escapeHtml(t.mudanca.pcOrigem || 'sem máquina')} → ${escapeHtml(t.mudanca.pcDestino)} · ${t.mudanca.aplicada ? '✓ cadastro atualizado em ' + fmtDate(t.mudanca.aplicadaEm) : 'cadastro será atualizado ao finalizar'}</div>` : ''}
+      ${t.tipo === 'mudanca' && t.mudanca ? `<div class="meta" style="margin-top:2px">🔄 Mudança de máquina: ${escapeHtml(t.mudanca.pcOrigem || 'sem máquina')} → ${escapeHtml(t.mudanca.pcDestino)}${t.mudanca.entraScannerNome ? ' · ' + escapeHtml(t.mudanca.entraScannerNome) + ' entra em ' + escapeHtml(t.mudanca.pcOrigem || 'sem máquina') : ''} · ${t.mudanca.aplicada ? '✓ cadastro atualizado em ' + fmtDate(t.mudanca.aplicadaEm) : 'cadastro será atualizado ao finalizar'}</div>` : ''}
       <div class="problem">${escapeHtml(t.problema)}</div>
       <div class="meta">Aberto em ${fmtDate(t.data)}${t.status === 'resolvido' && t.dataResolucao ? ' · Finalizado em ' + fmtDate(t.dataResolucao) : ''}</div>
       <div class="actions">
