@@ -884,16 +884,9 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
       </select>
       <div class="card" id="chScannerInfo" style="display:none;margin-top:10px;background:var(--surface-2)"></div>
       <div id="chMudancaWrap" style="display:none">
-        <label>Máquina de destino (PC ID)</label>
-        <input id="chPcDestino" placeholder="Ex: PC-CAPTURA-01" list="listaPcIdsChamado" autocomplete="off" oninput="atualizarPreviaMudanca()">
-        <datalist id="listaPcIdsChamado"></datalist>
-        <div id="chAcaoOutroWrap" style="display:none">
-          <label>Scanner que já está nessa máquina</label>
-          <select id="chAcaoOutro" onchange="atualizarPreviaMudanca()">
-            <option value="trocar">Trocar de lugar (ele vai para a máquina atual deste scanner)</option>
-            <option value="liberar">Deixar sem máquina vinculada</option>
-          </select>
-        </div>
+        <label>Máquina (PC ID) de onde o scanner sai</label>
+        <input id="chPcDestino" readonly tabindex="-1" placeholder="Preenchido automaticamente ao escolher o scanner" style="background:var(--surface-2);cursor:not-allowed">
+        <div class="hint" style="margin-top:4px">Preenchido automaticamente. O scanner escolhido sai dessa máquina e o scanner abaixo entra no lugar dele.</div>
         <div id="chEntraWrap" style="display:none">
           <label>Scanner que vai entrar no lugar dele (opcional)</label>
           <input type="hidden" id="chScannerEntraId" value="">
@@ -2830,46 +2823,36 @@ function getScannerChamadoSelecionado(){
 // Mostra o "antes e depois" da mudança de máquina enquanto o usuário preenche
 function atualizarPreviaMudanca(){
   const box = document.getElementById('chMudancaPrevia');
-  const acaoWrap = document.getElementById('chAcaoOutroWrap');
   const entraWrap = document.getElementById('chEntraWrap');
-  if(!box || !acaoWrap || !entraWrap) return;
+  const pcField = document.getElementById('chPcDestino');
+  if(!box || !entraWrap || !pcField) return;
   if(document.getElementById('chTipo').value !== 'mudanca'){
-    box.style.display = 'none'; acaoWrap.style.display = 'none'; entraWrap.style.display = 'none'; return;
+    box.style.display = 'none'; entraWrap.style.display = 'none'; pcField.value = ''; return;
   }
   const s = getScannerChamadoSelecionado();
-  const destino = document.getElementById('chPcDestino').value.trim();
+  const origem = s ? (s.pcId || '') : '';
+  // máquina preenchida automaticamente (somente leitura): é o PC de onde o scanner sai
+  pcField.value = origem;
+  pcField.placeholder = s ? 'Este scanner não está vinculado a nenhuma máquina' : 'Preenchido automaticamente ao escolher o scanner';
 
-  // campo "scanner que entra" fica sempre disponível no chamado de mudança
   entraWrap.style.display = 'block';
   const entraNome = document.getElementById('chScannerEntra').value.trim();
   const entraSel = getScannerEntraSelecionado();
-  const avisosEntra = [];
-  if(entraNome && !entraSel) avisosEntra.push('⚠ O scanner que vai entrar não foi encontrado no cadastro.');
-  if(entraSel && s && entraSel.id === s.id) avisosEntra.push('⚠ O scanner que entra não pode ser o mesmo que será movimentado.');
-  if(entraSel && s && !s.pcId) avisosEntra.push('⚠ O scanner movimentado não está em nenhuma máquina, então não há lugar para o outro assumir.');
-  const entra = (entraSel && s && s.pcId && entraSel.id !== s.id) ? entraSel : null;
-  const outro = (s && destino) ? scanners.find(x => x.id !== s.id && normPc(x.pcId) === normPc(destino)) : null;
-  // com um scanner definido para entrar, o que já está no destino é tratado automaticamente
-  acaoWrap.style.display = (outro && !entra) ? 'block' : 'none';
+  const avisos = [];
+  if(entraNome && !entraSel) avisos.push('⚠ O scanner que vai entrar não foi encontrado no cadastro.');
+  if(entraSel && s && entraSel.id === s.id) avisos.push('⚠ O scanner que entra não pode ser o mesmo que sai.');
+  const entra = (entraSel && s && origem && entraSel.id !== s.id) ? entraSel : null;
   if(!s){ box.style.display = 'none'; return; }
 
-  const linhas = [`<b>${escapeHtml(s.nome)}</b> está hoje em: ${s.pcId ? escapeHtml(s.pcId) : 'nenhuma máquina'}`, ...avisosEntra];
-  if(destino){
-    if(normPc(s.pcId) === normPc(destino)){
-      linhas.push('⚠ Esse scanner já está vinculado a essa máquina.');
+  const linhas = [`<b>${escapeHtml(s.nome)}</b> está hoje em: ${origem ? escapeHtml(origem) : 'nenhuma máquina'}`, ...avisos];
+  if(!origem){
+    linhas.push('⚠ Esse scanner não está vinculado a nenhuma máquina, então não há PC para ele sair.');
+  } else {
+    linhas.push(`Depois da mudança: ${escapeHtml(s.nome)} sai de ${escapeHtml(origem)} (fica sem máquina vinculada)`);
+    if(entra){
+      linhas.push(`${escapeHtml(entra.nome)} (hoje em ${entra.pcId ? escapeHtml(entra.pcId) : 'nenhuma máquina'}) → entra em ${escapeHtml(origem)}`);
     } else {
-      linhas.push(`Depois da mudança: ${escapeHtml(s.nome)} → ${escapeHtml(destino)}`);
-      if(entra){
-        linhas.push(`${escapeHtml(entra.nome)} (hoje em ${entra.pcId ? escapeHtml(entra.pcId) : 'nenhuma máquina'}) → ${escapeHtml(s.pcId)}`);
-        if(outro && outro.id !== entra.id) linhas.push(`${escapeHtml(outro.nome)} (hoje em ${escapeHtml(destino)}) → sem máquina vinculada`);
-      } else if(outro){
-        const acao = document.getElementById('chAcaoOutro').value;
-        linhas.push(acao === 'trocar'
-          ? `${escapeHtml(outro.nome)} (hoje em ${escapeHtml(destino)}) → ${s.pcId ? escapeHtml(s.pcId) : 'sem máquina'}`
-          : `${escapeHtml(outro.nome)} (hoje em ${escapeHtml(destino)}) → sem máquina vinculada`);
-      } else {
-        linhas.push('Nenhum outro scanner está vinculado a essa máquina hoje.');
-      }
+      linhas.push('Nenhum scanner definido para entrar nessa máquina.');
     }
   }
   box.innerHTML = `<div class="hint" style="margin:0 0 6px;color:var(--text)"><b>Prévia da mudança</b></div>`
@@ -2879,30 +2862,17 @@ function atualizarPreviaMudanca(){
 
 async function abrirChamadoMudanca(){
   const s = getScannerChamadoSelecionado();
-  const destino = document.getElementById('chPcDestino').value.trim();
   const motivo = document.getElementById('chProblema').value.trim();
   if(!s){ showToast('Selecione um scanner cadastrado (bipe o QR ou escolha na lista)', true); return; }
-  if(!destino){ showToast('Informe a máquina de destino', true); return; }
-  if(normPc(s.pcId) === normPc(destino)){ showToast('Esse scanner já está vinculado a essa máquina', true); return; }
-
   const origem = s.pcId || '';
-  const outro = scanners.find(x => x.id !== s.id && normPc(x.pcId) === normPc(destino)) || null;
+  if(!origem){ showToast('Esse scanner não está vinculado a nenhuma máquina (PC ID)', true); return; }
   const entraNome = document.getElementById('chScannerEntra').value.trim();
   const entra = getScannerEntraSelecionado();
   if(entraNome && !entra){ showToast('O scanner que vai entrar não foi encontrado no cadastro', true); return; }
-  if(entra && entra.id === s.id){ showToast('O scanner que entra não pode ser o mesmo que será movimentado', true); return; }
-  if(entra && !origem){ showToast('O scanner movimentado não está em nenhuma máquina — não há lugar para o outro assumir', true); return; }
-  const acaoOutro = outro ? (entra ? (outro.id === entra.id ? 'trocar' : 'liberar') : document.getElementById('chAcaoOutro').value) : '';
+  if(entra && entra.id === s.id){ showToast('O scanner que entra não pode ser o mesmo que sai', true); return; }
 
-  let problema = `Mudança de máquina: ${s.nome} — de ${origem || 'sem máquina'} para ${destino}.`;
-  if(entra){
-    problema += ` ${entra.nome} entrará no lugar dele em ${origem}.`;
-    if(outro && outro.id !== entra.id) problema += ` ${outro.nome} ficará sem máquina vinculada.`;
-  } else if(outro){
-    problema += acaoOutro === 'trocar'
-      ? ` ${outro.nome} irá para ${origem || 'sem máquina'}.`
-      : ` ${outro.nome} ficará sem máquina vinculada.`;
-  }
+  let problema = `Mudança de scanner: ${s.nome} sai de ${origem}.`;
+  if(entra) problema += ` ${entra.nome} entra em ${origem}.`;
   if(motivo) problema += ` Motivo: ${motivo}`;
 
   const scannerInfo = {
@@ -2913,9 +2883,9 @@ async function abrirChamadoMudanca(){
     id: uid(), tipo: 'mudanca', scanner: s.nome, scannerInfo, problema, status: 'aberto',
     data: new Date().toISOString(),
     mudanca: {
-      scannerId: s.id, pcOrigem: origem, pcDestino: destino,
-      outroScannerId: outro ? outro.id : '', outroScannerNome: outro ? outro.nome : '',
-      acaoOutro: acaoOutro,
+      scannerId: s.id, pcOrigem: origem, pcDestino: '',
+      outroScannerId: '', outroScannerNome: '',
+      acaoOutro: '',
       entraScannerId: entra ? entra.id : '', entraScannerNome: entra ? entra.nome : '',
       aplicada: false
     }
@@ -2925,7 +2895,6 @@ async function abrirChamadoMudanca(){
   await saveTicket(ticket);
 
   document.getElementById('chProblema').value = '';
-  document.getElementById('chPcDestino').value = '';
   document.getElementById('chScannerEntra').value = '';
   limparScannerInfo('chScannerEntraInfo');
   atualizarPreviaMudanca();
@@ -2948,9 +2917,9 @@ async function aplicarMudancaScanner(t){
   const agora = new Date().toISOString();
   const usuario = currentUser ? currentUser.nome : null;
   const origem = s.pcId || '';
-  const destino = m.pcDestino;
+  const destino = m.pcDestino || '';
   // reavalia quem está na máquina de destino NO MOMENTO de finalizar
-  const outro = scanners.find(x => x.id !== s.id && normPc(x.pcId) === normPc(destino)) || null;
+  const outro = destino ? (scanners.find(x => x.id !== s.id && normPc(x.pcId) === normPc(destino)) || null) : null;
   const entra = (m.entraScannerId && origem) ? (scanners.find(x => x.id === m.entraScannerId && x.id !== s.id) || null) : null;
 
   const mover = (sc, de, para) => {
@@ -2960,7 +2929,7 @@ async function aplicarMudancaScanner(t){
   };
   const alterados = [s];
   mover(s, origem, destino);
-  let resumo = `Cadastro atualizado automaticamente: ${s.nome} → ${destino}`;
+  let resumo = `Cadastro atualizado automaticamente: ${s.nome} → ${destino || 'sem máquina'}`;
   if(entra){
     // o scanner escolhido assume a máquina de origem; quem estava no destino (se for outro) fica sem máquina
     if(outro && outro.id !== entra.id){
@@ -3434,7 +3403,7 @@ function renderChamados(){
         <span class="status-pill status-${t.status}">${labels[t.status]}</span>
       </div>
       ${fmtScannerInfoChamado(t.scannerInfo)}
-      ${t.tipo === 'mudanca' && t.mudanca ? `<div class="meta" style="margin-top:2px">🔄 Mudança de máquina: ${escapeHtml(t.mudanca.pcOrigem || 'sem máquina')} → ${escapeHtml(t.mudanca.pcDestino)}${t.mudanca.entraScannerNome ? ' · ' + escapeHtml(t.mudanca.entraScannerNome) + ' entra em ' + escapeHtml(t.mudanca.pcOrigem || 'sem máquina') : ''} · ${t.mudanca.aplicada ? '✓ cadastro atualizado em ' + fmtDate(t.mudanca.aplicadaEm) : 'cadastro será atualizado ao finalizar'}</div>` : ''}
+      ${t.tipo === 'mudanca' && t.mudanca ? `<div class="meta" style="margin-top:2px">🔄 Mudança de máquina: ${escapeHtml(t.mudanca.pcOrigem || 'sem máquina')} → ${escapeHtml(t.mudanca.pcDestino || 'sem máquina')}${t.mudanca.entraScannerNome ? ' · ' + escapeHtml(t.mudanca.entraScannerNome) + ' entra em ' + escapeHtml(t.mudanca.pcOrigem || 'sem máquina') : ''} · ${t.mudanca.aplicada ? '✓ cadastro atualizado em ' + fmtDate(t.mudanca.aplicadaEm) : 'cadastro será atualizado ao finalizar'}</div>` : ''}
       <div class="problem">${escapeHtml(t.problema)}</div>
       <div class="meta">Aberto em ${fmtDate(t.data)}${t.status === 'resolvido' && t.dataResolucao ? ' · Finalizado em ' + fmtDate(t.dataResolucao) : ''}</div>
       <div class="actions">
