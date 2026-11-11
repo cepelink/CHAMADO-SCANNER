@@ -1746,14 +1746,16 @@ function gerarRelatorioScanners(){
     const locLabel = !locFiltro ? 'Todas as localizações' : locFiltro === '__sem__' ? 'Sem localização' : locFiltro;
     const conLabel = conFiltro === 'com' ? 'Somente com PC conectado' : conFiltro === 'sem' ? 'Somente sem PC conectado' : 'Com e sem PC conectado';
     const comPc = lista.filter(scannerTemPc).length;
-    const emProd = lista.filter(x => (x.situacao || 'producao') === 'producao').length;
+    const emProd = lista.filter(x => scannerGrupo(x) === 'producao').length;
+    const emReserva = lista.filter(x => scannerGrupo(x) === 'reserva').length;
+    const foraOp = lista.filter(x => scannerGrupo(x) === 'fora').length;
     const comChamado = lista.filter(x => scannerTemChamadoAberto(x.nome)).length;
 
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
     const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
     const M = 10;
-    const NAVY = [15,23,42], BLUE = [37,99,235], GREEN = [22,163,74], RED = [220,38,38], AMBER = [217,119,6], GRAY = [100,116,139], LIGHT = [241,245,249];
+    const NAVY = [15,23,42], BLUE = [37,99,235], GREEN = [22,163,74], RED = [220,38,38], AMBER = [217,119,6], GRAY = [100,116,139], ORANGE = [249,115,22], DARKRED = [153,27,27], LIGHT = [241,245,249];
     const agora = new Date();
     const emitido = agora.toLocaleDateString('pt-BR') + ' ' + agora.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
 
@@ -1778,15 +1780,16 @@ function gerarRelatorioScanners(){
       ['Com PC conectado', comPc, GREEN],
       ['Sem PC conectado', lista.length - comPc, RED],
       ['Em produção', emProd, GREEN],
-      ['Fora de operação', lista.length - emProd, AMBER],
-      ['Com chamado aberto', comChamado, RED]
+      ['Em reserva (backup)', emReserva, ORANGE],
+      ['Fora de operação', foraOp, RED],
+      ['Com chamado aberto', comChamado, DARKRED]
     ];
     const gap = 3, kw = (W - 2*M - gap*(kpis.length-1)) / kpis.length, ky = 37, kh = 17;
     kpis.forEach((k, i) => {
       const x = M + i*(kw+gap);
       doc.setFillColor(...LIGHT); doc.roundedRect(x, ky, kw, kh, 2, 2, 'F');
       doc.setFillColor(...k[2]); doc.roundedRect(x, ky, 1.8, kh, 0.9, 0.9, 'F');
-      doc.setTextColor(...NAVY); doc.setFont('helvetica','bold'); doc.setFontSize(16);
+      doc.setTextColor(...(k[0].indexOf('reserva') >= 0 ? ORANGE : NAVY)); doc.setFont('helvetica','bold'); doc.setFontSize(16);
       doc.text(String(k[1]), x+6, ky+9);
       doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(...GRAY);
       doc.text(k[0], x+6, ky+14);
@@ -1806,12 +1809,18 @@ function gerarRelatorioScanners(){
     chaves.forEach(k => {
       const g = grupos[k].slice().sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR', {numeric:true}));
       const c = g.filter(scannerTemPc).length;
+      const res = g.filter(x => scannerGrupo(x) === 'reserva').length;
       if(y > H - 40){ doc.addPage(); y = 18; }
       doc.setFillColor(...NAVY); doc.roundedRect(M, y, W-2*M, 8, 1.5, 1.5, 'F');
       doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(10.5);
       doc.text(k, M+4, y+5.4);
       doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(203,213,225);
-      doc.text(g.length + ' scanner(s)   |   ' + c + ' com PC   |   ' + (g.length - c) + ' sem PC', W-M-4, y+5.4, {align:'right'});
+      const resTxt = res + ' em reserva (backup)';
+      const baseTxt = g.length + ' scanner(s)   |   ' + c + ' com PC   |   ' + (g.length - c) + ' sem PC   |   ';
+      const wRes = doc.getTextWidth(resTxt);
+      doc.text(baseTxt, W-M-4-wRes, y+5.4, {align:'right'});
+      doc.setFont('helvetica','bold'); doc.setTextColor(...ORANGE);
+      doc.text(resTxt, W-M-4, y+5.4, {align:'right'});
 
       const body = g.map(x => {
         const tem = scannerTemPc(x);
@@ -1846,7 +1855,7 @@ function gerarRelatorioScanners(){
           if(d.section !== 'body') return;
           const row = body[d.row.index];
           if(d.column.index === 5){ d.cell.styles.fontStyle = 'bold'; d.cell.styles.textColor = row[5] === 'Conectado' ? GREEN : RED; }
-          if(d.column.index === 9){ d.cell.styles.fontStyle = 'bold'; d.cell.styles.textColor = /^Em produção/.test(row[9]) ? GREEN : AMBER; if(/Chamado aberto/.test(row[9])) d.cell.styles.textColor = RED; }
+          if(d.column.index === 9){ d.cell.styles.fontStyle = 'bold'; const gr = scannerGrupo(g[d.row.index]); d.cell.styles.textColor = gr === 'producao' ? GREEN : gr === 'reserva' ? ORANGE : RED; if(/Chamado aberto/.test(row[9])) d.cell.styles.textColor = DARKRED; }
           if(d.column.index === 8 && /vencida/.test(row[8])) d.cell.styles.textColor = RED;
         },
         didDrawPage: (d) => {
