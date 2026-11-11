@@ -360,6 +360,15 @@
 
   .print-only{ display:none; }
 
+  /* relatório de scanners (aba Scanners) */
+  .scanner-rel-filtros{ display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; margin:10px 0; padding:12px; border:1px dashed var(--border); border-radius:8px; }
+  .scanner-rel-filtros > div{ display:flex; flex-direction:column; gap:4px; min-width:200px; }
+  .scanner-rel-filtros label{ margin:0; }
+  .rel-grupo-titulo{ margin:16px 0 6px; font-size:14px; font-weight:700; }
+  .rel-conexao{ display:inline-block; padding:1px 8px; border-radius:10px; font-size:11.5px; font-weight:700; border:1px solid var(--border); }
+  .rel-conexao.sim{ color:var(--green); }
+  .rel-conexao.nao{ color:var(--red); }
+
   @page{ margin:16mm 14mm; }
 
   @media print{
@@ -374,6 +383,10 @@
     /* Relatório: imprime só o relatório cujo botão foi clicado */
     #view-relatorio.printing-one .card{ display:none !important; }
     #view-relatorio.printing-one .card.print-target{ display:block !important; }
+    #view-scanners.printing-one .card{ display:none !important; }
+    #view-scanners.printing-one .card.print-target{ display:block !important; border:none; padding:0; background:#fff; }
+    .rel-conexao, .rel-conexao.sim, .rel-conexao.nao{ color:#111 !important; border:1px solid #999; }
+    .rel-grupo-titulo{ color:#111; page-break-after:avoid; }
     /* A logo fica só no cabeçalho da 1ª página (fluxo normal), não mais fixa
        em todas as páginas — era isso que sobrepunha o conteúdo a partir da 2ª página. */
     .print-header{ position:relative; border-bottom:2px solid #111; padding-bottom:10px; margin-bottom:16px; padding-right:56px; }
@@ -689,7 +702,32 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
         <select id="scannerFiltroContrato" onchange="renderScanners()" style="max-width:280px"></select>
         <span class="hint" id="scannerFiltroInfo" style="margin:0"></span>
       </div>
+      <div class="scanner-rel-filtros no-print">
+        <div>
+          <label for="scannerRelLocal">Relatório — Localização</label>
+          <select id="scannerRelLocal"></select>
+        </div>
+        <div>
+          <label for="scannerRelConexao">PC ID conectado</label>
+          <select id="scannerRelConexao">
+            <option value="">Todos (com e sem PC)</option>
+            <option value="com">Somente com PC conectado</option>
+            <option value="sem">Somente sem PC conectado</option>
+          </select>
+        </div>
+        <button class="primary info" type="button" onclick="gerarRelatorioScanners()">📄 Gerar relatório</button>
+      </div>
       <div id="scannersList"></div>
+    </div>
+    <div class="card" id="scannerRelCard" style="display:none">
+      <div class="print-only print-header">
+        <img class="print-only print-logo" id="scannerRelLogo" alt="Logo CEPE">
+        <h1>Relação de Scanners</h1>
+        <div class="print-meta" id="scannerRelMeta"></div>
+      </div>
+      <h2>Relatório de scanners <span class="tag" id="scannerRelTag">0</span></h2>
+      <button class="ghost no-print" style="margin-bottom:12px" onclick="imprimirRelatorioScanners(this)">🖨 Imprimir / Salvar em PDF</button>
+      <div id="scannerRelConteudo"></div>
     </div>
   </section>
 
@@ -1681,6 +1719,98 @@ function scannerRowHtml(s){
     </div>`;
 }
 
+// ---------- relatório de scanners (filtro por localização e PC conectado) ----------
+function scannerTemPc(s){ return !!(s.pcId || '').trim(); }
+
+function fillScannerRelFiltros(producao){
+  const sel = document.getElementById('scannerRelLocal');
+  if(!sel) return;
+  const atual = sel.value;
+  const locais = [...new Set(producao.map(s => (s.localizacao || '').trim()).filter(Boolean))]
+    .sort((a,b) => a.localeCompare(b, 'pt-BR', {numeric:true}));
+  const semLocal = producao.filter(s => !(s.localizacao || '').trim()).length;
+  sel.innerHTML = `<option value="">Todas as localizações</option>`
+    + locais.map(l => `<option value="${escapeHtml(l)}">${escapeHtml(l)} (${producao.filter(s => (s.localizacao || '').trim() === l).length})</option>`).join('')
+    + (semLocal ? `<option value="__sem__">Sem localização (${semLocal})</option>` : '');
+  sel.value = [...sel.options].some(o => o.value === atual) ? atual : '';
+}
+
+function gerarRelatorioScanners(){
+  const producao = scanners.filter(s => s.tipo !== 'inspecao');
+  const locFiltro = document.getElementById('scannerRelLocal').value;
+  const conFiltro = document.getElementById('scannerRelConexao').value;
+
+  const lista = producao.filter(s => {
+    const loc = (s.localizacao || '').trim();
+    if(locFiltro === '__sem__' && loc) return false;
+    if(locFiltro && locFiltro !== '__sem__' && loc !== locFiltro) return false;
+    if(conFiltro === 'com' && !scannerTemPc(s)) return false;
+    if(conFiltro === 'sem' && scannerTemPc(s)) return false;
+    return true;
+  });
+
+  const locLabel = !locFiltro ? 'Todas' : locFiltro === '__sem__' ? 'Sem localização' : locFiltro;
+  const conLabel = conFiltro === 'com' ? 'Somente com PC conectado' : conFiltro === 'sem' ? 'Somente sem PC conectado' : 'Com e sem PC conectado';
+  const comPc = lista.filter(scannerTemPc).length;
+
+  const logo = document.querySelector('header .cepe-logo');
+  if(logo) document.getElementById('scannerRelLogo').src = logo.src;
+  document.getElementById('scannerRelCard').style.display = 'block';
+  document.getElementById('scannerRelTag').textContent = lista.length;
+  document.getElementById('scannerRelMeta').textContent =
+    `Localização: ${locLabel}  ·  Conexão: ${conLabel}  ·  Total: ${lista.length}  ·  Com PC: ${comPc}  ·  Sem PC: ${lista.length - comPc}  ·  Emitido em: ${fmtDate(new Date().toISOString())}`;
+
+  const box = document.getElementById('scannerRelConteudo');
+  if(!lista.length){
+    box.innerHTML = `<div class="empty"><span class="glyph">▢</span>Nenhum scanner encontrado com esses filtros.</div>`;
+    return;
+  }
+
+  const ordenar = (a,b) => a.nome.localeCompare(b.nome, 'pt-BR', {numeric:true});
+  const linha = (s) => {
+    const tem = scannerTemPc(s);
+    return `<tr>
+      <td>${escapeHtml(s.nome)}</td>
+      <td>${escapeHtml(((s.marca || '') + ' ' + (s.modelo || '')).trim() || '—')}</td>
+      <td>${escapeHtml(s.numeroSerie || '—')}</td>
+      <td>${escapeHtml(s.patrimonio || '—')}</td>
+      <td>${tem ? escapeHtml(s.pcId) : '—'}</td>
+      <td><span class="rel-conexao ${tem ? 'sim' : 'nao'}">${tem ? 'Conectado' : 'Sem PC'}</span></td>
+      <td>${escapeHtml(situacaoLabelScanner(s))}</td>
+    </tr>`;
+  };
+  const cabecalho = `<thead><tr><th>Scanner</th><th>Marca / Modelo</th><th>Nº de série</th><th>Tombo</th><th>PC ID</th><th>Conexão</th><th>Situação</th></tr></thead>`;
+
+  // agrupa por localização (cada grupo com seu subtotal)
+  const grupos = {};
+  lista.forEach(s => { const k = (s.localizacao || '').trim() || 'Sem localização'; (grupos[k] = grupos[k] || []).push(s); });
+  const chaves = Object.keys(grupos).sort((a,b) => {
+    if(a === 'Sem localização') return 1;
+    if(b === 'Sem localização') return -1;
+    return a.localeCompare(b, 'pt-BR', {numeric:true});
+  });
+  box.innerHTML = chaves.map(k => {
+    const g = grupos[k].slice().sort(ordenar);
+    const c = g.filter(scannerTemPc).length;
+    return `<div class="rel-grupo-titulo">${escapeHtml(k)} <span class="hint" style="font-weight:400">— ${g.length} scanner(s) · ${c} com PC · ${g.length - c} sem PC</span></div>
+      <table>${cabecalho}<tbody>${g.map(linha).join('')}</tbody></table>`;
+  }).join('');
+}
+
+function imprimirRelatorioScanners(btn){
+  const card = btn.closest('.card');
+  const view = document.getElementById('view-scanners');
+  card.classList.add('print-target');
+  view.classList.add('printing-one');
+  const limpar = () => {
+    card.classList.remove('print-target');
+    view.classList.remove('printing-one');
+    window.removeEventListener('afterprint', limpar);
+  };
+  window.addEventListener('afterprint', limpar);
+  window.print();
+}
+
 function renderScanners(){
   const list = document.getElementById('scannersList');
   // "Scanners" = scanners de produção (captura). Os de inspeção ficam na aba "Inspeção".
@@ -1688,6 +1818,7 @@ function renderScanners(){
   document.getElementById('totalScannersTag').textContent = producao.length;
   renderScannerResumo(producao, 'scannerResumo');
   fillManualScannerSelects();
+  fillScannerRelFiltros(producao);
 
   // filtro por contrato
   const selC = document.getElementById('scannerFiltroContrato');
