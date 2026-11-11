@@ -436,6 +436,8 @@
 
 <!-- Leitura de planilhas Excel/CSV para importação de chamados -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 
 <!-- Envio de e-mail de notificação de chamado (EmailJS) -->
 <!-- Biblioteca EmailJS embutida diretamente (sem depender de CDN externo) -->
@@ -715,19 +717,9 @@ var emailjs=function(e){"use strict";class t{constructor(){let e=arguments.lengt
             <option value="sem">Somente sem PC conectado</option>
           </select>
         </div>
-        <button class="primary info" type="button" onclick="gerarRelatorioScanners()">📄 Gerar relatório</button>
+        <button class="primary info" type="button" onclick="gerarRelatorioScanners()">📄 Gerar relatório em PDF</button>
       </div>
       <div id="scannersList"></div>
-    </div>
-    <div class="card" id="scannerRelCard" style="display:none">
-      <div class="print-only print-header">
-        <img class="print-only print-logo" id="scannerRelLogo" alt="Logo CEPE">
-        <h1>Relação de Scanners</h1>
-        <div class="print-meta" id="scannerRelMeta"></div>
-      </div>
-      <h2>Relatório de scanners <span class="tag" id="scannerRelTag">0</span></h2>
-      <button class="ghost no-print" style="margin-bottom:12px" onclick="imprimirRelatorioScanners(this)">🖨 Imprimir / Salvar em PDF</button>
-      <div id="scannerRelConteudo"></div>
     </div>
   </section>
 
@@ -1736,79 +1728,154 @@ function fillScannerRelFiltros(producao){
 }
 
 function gerarRelatorioScanners(){
-  const producao = scanners.filter(s => s.tipo !== 'inspecao');
-  const locFiltro = document.getElementById('scannerRelLocal').value;
-  const conFiltro = document.getElementById('scannerRelConexao').value;
+  try{
+    if(!window.jspdf || !window.jspdf.jsPDF){ showToast('Biblioteca de PDF não carregou. Verifique a internet e recarregue a página.', true); return; }
+    const producao = scanners.filter(s => s.tipo !== 'inspecao');
+    const locFiltro = document.getElementById('scannerRelLocal').value;
+    const conFiltro = document.getElementById('scannerRelConexao').value;
+    const lista = producao.filter(s => {
+      const loc = (s.localizacao || '').trim();
+      if(locFiltro === '__sem__' && loc) return false;
+      if(locFiltro && locFiltro !== '__sem__' && loc !== locFiltro) return false;
+      if(conFiltro === 'com' && !scannerTemPc(s)) return false;
+      if(conFiltro === 'sem' && scannerTemPc(s)) return false;
+      return true;
+    });
+    if(!lista.length){ showToast('Nenhum scanner encontrado com esses filtros.', true); return; }
 
-  const lista = producao.filter(s => {
-    const loc = (s.localizacao || '').trim();
-    if(locFiltro === '__sem__' && loc) return false;
-    if(locFiltro && locFiltro !== '__sem__' && loc !== locFiltro) return false;
-    if(conFiltro === 'com' && !scannerTemPc(s)) return false;
-    if(conFiltro === 'sem' && scannerTemPc(s)) return false;
-    return true;
-  });
+    const locLabel = !locFiltro ? 'Todas as localizações' : locFiltro === '__sem__' ? 'Sem localização' : locFiltro;
+    const conLabel = conFiltro === 'com' ? 'Somente com PC conectado' : conFiltro === 'sem' ? 'Somente sem PC conectado' : 'Com e sem PC conectado';
+    const comPc = lista.filter(scannerTemPc).length;
+    const emProd = lista.filter(x => (x.situacao || 'producao') === 'producao').length;
+    const comChamado = lista.filter(x => scannerTemChamadoAberto(x.nome)).length;
 
-  const locLabel = !locFiltro ? 'Todas' : locFiltro === '__sem__' ? 'Sem localização' : locFiltro;
-  const conLabel = conFiltro === 'com' ? 'Somente com PC conectado' : conFiltro === 'sem' ? 'Somente sem PC conectado' : 'Com e sem PC conectado';
-  const comPc = lista.filter(scannerTemPc).length;
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
+    const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
+    const M = 10;
+    const NAVY = [15,23,42], BLUE = [37,99,235], GREEN = [22,163,74], RED = [220,38,38], AMBER = [217,119,6], GRAY = [100,116,139], LIGHT = [241,245,249];
+    const agora = new Date();
+    const emitido = agora.toLocaleDateString('pt-BR') + ' ' + agora.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
 
-  const logo = document.querySelector('header .cepe-logo');
-  if(logo) document.getElementById('scannerRelLogo').src = logo.src;
-  document.getElementById('scannerRelCard').style.display = 'block';
-  document.getElementById('scannerRelTag').textContent = lista.length;
-  document.getElementById('scannerRelMeta').textContent =
-    `Localização: ${locLabel}  ·  Conexão: ${conLabel}  ·  Total: ${lista.length}  ·  Com PC: ${comPc}  ·  Sem PC: ${lista.length - comPc}  ·  Emitido em: ${fmtDate(new Date().toISOString())}`;
+    // ---- cabeçalho (1ª página) ----
+    doc.setFillColor(...NAVY); doc.rect(0, 0, W, 30, 'F');
+    doc.setFillColor(...BLUE); doc.rect(0, 30, W, 1.2, 'F');
+    const logo = document.querySelector('header .cepe-logo');
+    if(logo && logo.src && logo.src.startsWith('data:image')){
+      doc.setFillColor(255,255,255); doc.roundedRect(M, 5, 20, 20, 3, 3, 'F');
+      try{ doc.addImage(logo.src, 'PNG', M+1.5, 6.5, 17, 17); }catch(e){}
+    }
+    doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(20);
+    doc.text('Relação de Scanners', M+26, 15);
+    doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(203,213,225);
+    doc.text('Localização: ' + locLabel + '   |   Conexão: ' + conLabel, M+26, 22);
+    doc.setFontSize(9); doc.text('Emitido em ' + emitido, W-M, 15, {align:'right'});
+    doc.text('Controle de Peças - Scanners', W-M, 22, {align:'right'});
 
-  const box = document.getElementById('scannerRelConteudo');
-  if(!lista.length){
-    box.innerHTML = `<div class="empty"><span class="glyph">▢</span>Nenhum scanner encontrado com esses filtros.</div>`;
-    return;
+    // ---- KPIs ----
+    const kpis = [
+      ['Total de scanners', lista.length, BLUE],
+      ['Com PC conectado', comPc, GREEN],
+      ['Sem PC conectado', lista.length - comPc, RED],
+      ['Em produção', emProd, GREEN],
+      ['Fora de operação', lista.length - emProd, AMBER],
+      ['Com chamado aberto', comChamado, RED]
+    ];
+    const gap = 3, kw = (W - 2*M - gap*(kpis.length-1)) / kpis.length, ky = 37, kh = 17;
+    kpis.forEach((k, i) => {
+      const x = M + i*(kw+gap);
+      doc.setFillColor(...LIGHT); doc.roundedRect(x, ky, kw, kh, 2, 2, 'F');
+      doc.setFillColor(...k[2]); doc.roundedRect(x, ky, 1.8, kh, 0.9, 0.9, 'F');
+      doc.setTextColor(...NAVY); doc.setFont('helvetica','bold'); doc.setFontSize(16);
+      doc.text(String(k[1]), x+6, ky+9);
+      doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(...GRAY);
+      doc.text(k[0], x+6, ky+14);
+    });
+
+    // ---- grupos por localização ----
+    const grupos = {};
+    lista.forEach(x => { const k = (x.localizacao || '').trim() || 'Sem localização'; (grupos[k] = grupos[k] || []).push(x); });
+    const chaves = Object.keys(grupos).sort((a,b) => {
+      if(a === 'Sem localização') return 1;
+      if(b === 'Sem localização') return -1;
+      return a.localeCompare(b, 'pt-BR', {numeric:true});
+    });
+    const dash = (v) => (v && String(v).trim()) ? String(v).trim() : '-';
+    let y = ky + kh + 8;
+
+    chaves.forEach(k => {
+      const g = grupos[k].slice().sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR', {numeric:true}));
+      const c = g.filter(scannerTemPc).length;
+      if(y > H - 40){ doc.addPage(); y = 18; }
+      doc.setFillColor(...NAVY); doc.roundedRect(M, y, W-2*M, 8, 1.5, 1.5, 'F');
+      doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(10.5);
+      doc.text(k, M+4, y+5.4);
+      doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(203,213,225);
+      doc.text(g.length + ' scanner(s)   |   ' + c + ' com PC   |   ' + (g.length - c) + ' sem PC', W-M-4, y+5.4, {align:'right'});
+
+      const body = g.map(x => {
+        const tem = scannerTemPc(x);
+        const venc = x.garantia && garantiaVencida(x.garantia);
+        const garantia = x.garantia ? fmtDataSimples(x.garantia) + (venc ? ' (vencida)' : '') : '-';
+        let sit = situacaoLabelScanner(x);
+        if(scannerTemChamadoAberto(x.nome)) sit += '\nChamado aberto';
+        return [
+          dash(x.nome),
+          dash(((x.marca || '') + ' ' + (x.modelo || '')).trim()),
+          dash(x.numeroSerie), dash(x.patrimonio),
+          tem ? x.pcId.trim() : '-',
+          tem ? 'Conectado' : 'Sem PC',
+          dash(x.licenca), dash(x.contrato), garantia, sit, dash(x.obs)
+        ];
+      });
+
+      doc.autoTable({
+        startY: y + 9,
+        head: [['Scanner','Marca / Modelo','Nº de série','Tombo','PC ID','Conexão','Licença','Contrato','Garantia','Situação','Observações']],
+        body,
+        theme: 'striped',
+        margin: { top: 16, left: M, right: M, bottom: 14 },
+        styles: { font:'helvetica', fontSize:7.5, cellPadding:1.8, textColor:NAVY, lineColor:[226,232,240], lineWidth:0.1, valign:'middle', overflow:'linebreak' },
+        headStyles: { fillColor:BLUE, textColor:255, fontStyle:'bold', fontSize:7.5 },
+        alternateRowStyles: { fillColor:[248,250,252] },
+        columnStyles: {
+          0:{cellWidth:28, fontStyle:'bold'}, 1:{cellWidth:26}, 2:{cellWidth:22}, 3:{cellWidth:17}, 4:{cellWidth:24},
+          5:{cellWidth:18, halign:'center'}, 6:{cellWidth:20}, 7:{cellWidth:24}, 8:{cellWidth:22}, 9:{cellWidth:30}
+        },
+        didParseCell: (d) => {
+          if(d.section !== 'body') return;
+          const row = body[d.row.index];
+          if(d.column.index === 5){ d.cell.styles.fontStyle = 'bold'; d.cell.styles.textColor = row[5] === 'Conectado' ? GREEN : RED; }
+          if(d.column.index === 9){ d.cell.styles.fontStyle = 'bold'; d.cell.styles.textColor = /^Em produção/.test(row[9]) ? GREEN : AMBER; if(/Chamado aberto/.test(row[9])) d.cell.styles.textColor = RED; }
+          if(d.column.index === 8 && /vencida/.test(row[8])) d.cell.styles.textColor = RED;
+        },
+        didDrawPage: (d) => {
+          if(d.pageNumber > 1){
+            doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(...GRAY);
+            doc.text('Relação de Scanners', M, 10);
+            doc.setDrawColor(...BLUE); doc.setLineWidth(0.5); doc.line(M, 12, W-M, 12);
+          }
+        }
+      });
+      y = doc.lastAutoTable.finalY + 8;
+    });
+
+    // ---- rodapé com paginação ----
+    const total = doc.internal.getNumberOfPages();
+    for(let i = 1; i <= total; i++){
+      doc.setPage(i);
+      doc.setDrawColor(226,232,240); doc.setLineWidth(0.2); doc.line(M, H-10, W-M, H-10);
+      doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...GRAY);
+      doc.text('Relação de Scanners  |  ' + emitido, M, H-6);
+      doc.text('Página ' + i + ' de ' + total, W-M, H-6, {align:'right'});
+    }
+
+    doc.save('relacao-scanners-' + agora.toISOString().slice(0,10) + '.pdf');
+    showToast('Relatório PDF gerado');
+  }catch(e){
+    console.error(e);
+    showToast('Erro ao gerar o PDF: ' + (e && e.message ? e.message : e), true);
   }
-
-  const ordenar = (a,b) => a.nome.localeCompare(b.nome, 'pt-BR', {numeric:true});
-  const linha = (s) => {
-    const tem = scannerTemPc(s);
-    return `<tr>
-      <td>${escapeHtml(s.nome)}</td>
-      <td>${escapeHtml(((s.marca || '') + ' ' + (s.modelo || '')).trim() || '—')}</td>
-      <td>${escapeHtml(s.numeroSerie || '—')}</td>
-      <td>${escapeHtml(s.patrimonio || '—')}</td>
-      <td>${tem ? escapeHtml(s.pcId) : '—'}</td>
-      <td><span class="rel-conexao ${tem ? 'sim' : 'nao'}">${tem ? 'Conectado' : 'Sem PC'}</span></td>
-      <td>${escapeHtml(situacaoLabelScanner(s))}</td>
-    </tr>`;
-  };
-  const cabecalho = `<thead><tr><th>Scanner</th><th>Marca / Modelo</th><th>Nº de série</th><th>Tombo</th><th>PC ID</th><th>Conexão</th><th>Situação</th></tr></thead>`;
-
-  // agrupa por localização (cada grupo com seu subtotal)
-  const grupos = {};
-  lista.forEach(s => { const k = (s.localizacao || '').trim() || 'Sem localização'; (grupos[k] = grupos[k] || []).push(s); });
-  const chaves = Object.keys(grupos).sort((a,b) => {
-    if(a === 'Sem localização') return 1;
-    if(b === 'Sem localização') return -1;
-    return a.localeCompare(b, 'pt-BR', {numeric:true});
-  });
-  box.innerHTML = chaves.map(k => {
-    const g = grupos[k].slice().sort(ordenar);
-    const c = g.filter(scannerTemPc).length;
-    return `<div class="rel-grupo-titulo">${escapeHtml(k)} <span class="hint" style="font-weight:400">— ${g.length} scanner(s) · ${c} com PC · ${g.length - c} sem PC</span></div>
-      <table>${cabecalho}<tbody>${g.map(linha).join('')}</tbody></table>`;
-  }).join('');
-}
-
-function imprimirRelatorioScanners(btn){
-  const card = btn.closest('.card');
-  const view = document.getElementById('view-scanners');
-  card.classList.add('print-target');
-  view.classList.add('printing-one');
-  const limpar = () => {
-    card.classList.remove('print-target');
-    view.classList.remove('printing-one');
-    window.removeEventListener('afterprint', limpar);
-  };
-  window.addEventListener('afterprint', limpar);
-  window.print();
 }
 
 function renderScanners(){
