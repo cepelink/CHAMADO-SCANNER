@@ -1644,11 +1644,11 @@ function situacaoLabelScanner(s){
 }
 
 // Classifica o scanner em: 'producao' (funcionando), 'reserva' (status personalizado
-// com "reserva" no nome) ou 'fora' (fora de operação: conserto externo e demais status)
+// com "reserva" ou "backup" no nome) ou 'fora' (fora de operação: conserto externo e demais status)
 function scannerGrupo(s){
   const sit = s.situacao || 'producao';
   if(sit === 'producao') return 'producao';
-  if(sit !== 'externo' && /reserva/i.test(s.situacaoCustom || '')) return 'reserva';
+  if(sit !== 'externo' && /reserva|backup/i.test(s.situacaoCustom || '')) return 'reserva';
   return 'fora';
 }
 
